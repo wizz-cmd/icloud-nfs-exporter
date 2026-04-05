@@ -20,7 +20,8 @@ A macOS service (Intel & Apple Silicon) that exports iCloud Drive folders via NF
 - **Document architecture**: All significant design decisions are recorded in `ARCHITECTURE.md` with pattern names, descriptions, and references.
 - **Preferred languages**:
   - Prio 1 (scripting/glue): Python, Perl, bash
-  - Prio 2 (performance-critical / system): Rust, C++, C
+  - Prio 2 (macOS-native / system frameworks): Swift — preferred for any component that touches Apple APIs (FileProvider, FSEvents, launchd, entitlements)
+  - Prio 3 (performance-critical / cross-platform system): Rust, C++, C — preferred for the FUSE driver layer (macFUSE exposes a C API; Rust's `fuser` crate is the best binding)
 
 ## Architecture
 

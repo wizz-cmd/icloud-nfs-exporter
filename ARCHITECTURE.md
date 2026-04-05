@@ -131,13 +131,25 @@ State is derived from xattr inspection and `brctl status`. Transitions are drive
 
 | Concern | Candidate | Notes |
 |---|---|---|
-| FUSE driver | macFUSE + pyfuse3 (Python) or fuse-rs (Rust) | Python first for rapid iteration |
-| iCloud state | `xattr`, `brctl`, `NSFileProviderManager` | `brctl` is scriptable; NSPM needs ObjC/Swift bridge |
+| iCloud hydration daemon | **Swift** | First-class `FileProvider` framework access; async/await fits blocking-hydration pattern perfectly; no ObjC bridge needed |
+| iCloud state detection | `NSFileProviderManager` via Swift | `brctl` is an undocumented private tool; NSPM is the stable public API |
+| FUSE driver | macFUSE + **Rust** (`fuser` crate) or C | macFUSE exposes a C API; Rust fuser is the best maintained binding; Python pyfuse3 is an option for prototyping only |
+| FSEvents / kqueue watcher | Swift `FSEvents` (native) | Built into the Swift hydration daemon; no extra lib |
 | NFS server | macOS `nfsd` (default) / `nfs-ganesha` (advanced) | Start with nfsd |
-| Service manager | `launchd` LaunchAgent | Native macOS |
-| Config format | TOML | Human-friendly, no ambiguity |
-| FSEvents watcher | `watchdog` (Python) | Cross-arch, wraps FSEvents & kqueue |
-| Testing | `pytest` + macOS VM snapshots | Snapshot pre/post iCloud eviction states |
+| Service manager | `launchd` LaunchAgent | Native macOS; Swift daemon gets proper entitlement signing |
+| Config format | TOML | Human-friendly, no ambiguity; parsed by Swift `TOMLKit` or Rust `toml` crate |
+| IPC (FUSE ↔ hydration daemon) | Unix domain socket | FUSE driver calls Swift daemon when hydration needed; simple length-prefixed JSON protocol |
+| Testing | Swift XCTest + macOS VM snapshots | Snapshot pre/post iCloud eviction states; Rust driver tested with cargo test |
+
+### Language Assignment by Component
+
+```
+src/
+├── hydration/      # Swift — FileProvider API, FSEvents, state machine, launchd
+├── fuse/           # Rust (or C) — macFUSE passthrough driver, IPC client
+├── scripts/        # Python / bash — install, setup, diagnostics
+└── tests/          # Swift XCTest + pytest
+```
 
 ---
 
@@ -156,4 +168,20 @@ State is derived from xattr inspection and `brctl status`. Transitions are drive
 |---|---|---|---|
 | 001 | Use FUSE passthrough as hydration shim | 2026-04-05 | Proposed |
 | 002 | Start with macOS nfsd, migrate to ganesha if needed | 2026-04-05 | Proposed |
-| 003 | Python for initial implementation (pyfuse3) | 2026-04-05 | Proposed |
+| 003 | ~~Python for initial implementation (pyfuse3)~~ → **Superseded by ADR 004** | 2026-04-05 | Superseded |
+| 004 | Swift for iCloud hydration daemon; Rust for FUSE driver | 2026-04-05 | Proposed |
+
+### ADR 004 — Swift + Rust language split
+
+**Decision:** Use Swift for the iCloud hydration daemon and Rust for the FUSE driver. Python is retained for scripting/glue only.
+
+**Rationale:**
+- `NSFileProviderManager` (the correct, stable API for iCloud hydration) is a Swift/ObjC framework. Accessing it from Python requires `pyobjc`, which has poor coverage of modern Apple frameworks and no type safety. From Swift it is first-class.
+- Swift `async/await` and `Actor` model map directly onto the hydration state machine: an evicted-file open can `await` the download without blocking a thread pool.
+- The FUSE driver (macFUSE) exposes a pure C API (`fuse_operations` struct). Rust's `fuser` crate wraps this cleanly and adds memory safety. Python's `pyfuse3` adds the GIL as a bottleneck on concurrent NFS clients.
+- The two components are naturally separated by an IPC boundary (Unix socket), so the language split has no forced coupling.
+
+**Trade-offs accepted:**
+- Two languages in the core increases build complexity (SPM + Cargo).
+- Swift on the command line (without Xcode) requires the Swift toolchain from swift.org — it is available for macOS and Linux.
+- Swift is Apple-controlled, not a GNU/Linux-first language — accepted as a necessary pragmatism for first-class iCloud API access.
