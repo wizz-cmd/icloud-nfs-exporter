@@ -149,9 +149,11 @@ final class HydrationManagerTests: XCTestCase {
         let mgr = HydrationManager(
             detector: MockDetector(stateMap: ["/a": .local]))
         _ = try await mgr.refreshState(for: "/a")
-        XCTAssertNotNil(await mgr.currentState(for: "/a"))
+        let before = await mgr.currentState(for: "/a")
+        XCTAssertNotNil(before)
         await mgr.stopTracking("/a")
-        XCTAssertNil(await mgr.currentState(for: "/a"))
+        let after = await mgr.currentState(for: "/a")
+        XCTAssertNil(after)
     }
 
     func testHydrateAlreadyLocal() async throws {
