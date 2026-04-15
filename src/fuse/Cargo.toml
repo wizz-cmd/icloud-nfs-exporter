@@ -1,0 +1,3 @@
+[workspace]
+members = ["fuse-core", "fuse-driver"]
+resolver = "2"
