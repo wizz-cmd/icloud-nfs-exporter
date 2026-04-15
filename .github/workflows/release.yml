@@ -16,20 +16,24 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release binaries
-        run: bash scripts/build-release.sh dist
-
       - name: Run tests
         run: make test
 
-      - name: Create tarball
+      - name: Build .app bundle
+        run: bash scripts/create-app-bundle.sh dist
+
+      - name: Create .dmg
+        run: bash scripts/create-dmg.sh dist
+
+      - name: Prepare release assets
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          TAR_NAME="icloud-nfs-exporter-${VERSION}-macos.tar.gz"
-          tar -czf "$TAR_NAME" -C dist .
-          echo "TAR_NAME=$TAR_NAME" >> "$GITHUB_ENV"
+          DMG="dist/iCloud-NFS-Exporter-${VERSION#v}.dmg"
+          # Rename with version tag
+          mv "$DMG" "dist/iCloud-NFS-Exporter-${VERSION}.dmg"
+          mv "$DMG.sha256" "dist/iCloud-NFS-Exporter-${VERSION}.dmg.sha256"
+          echo "DMG=dist/iCloud-NFS-Exporter-${VERSION}.dmg" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          shasum -a 256 "$TAR_NAME" | tee "$TAR_NAME.sha256"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -37,5 +41,5 @@ jobs:
           name: ${{ env.VERSION }}
           generate_release_notes: true
           files: |
-            ${{ env.TAR_NAME }}
-            ${{ env.TAR_NAME }}.sha256
+            ${{ env.DMG }}
+            ${{ env.DMG }}.sha256
