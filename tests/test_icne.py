@@ -14,7 +14,7 @@ from unittest.mock import patch
 # Add scripts/ to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from icne_lib import config, ipc, nfs
+from icne_lib import config, icloud, ipc, nfs
 
 
 class TestConfig(unittest.TestCase):
@@ -213,6 +213,69 @@ class TestIpc(unittest.TestCase):
 
         t.join(timeout=2)
         os.unlink(sock_path)
+
+
+class TestIcloud(unittest.TestCase):
+    def test_label_apple_containers(self):
+        self.assertEqual(icloud.label_for_container("com~apple~CloudDocs"), "iCloud Drive")
+        self.assertEqual(icloud.label_for_container("com~apple~Numbers"), "Numbers")
+        self.assertEqual(icloud.label_for_container("com~apple~Pages"), "Pages")
+        self.assertEqual(icloud.label_for_container("com~apple~Keynote"), "Keynote")
+
+    def test_label_third_party(self):
+        self.assertEqual(
+            icloud.label_for_container("iCloud~com~example~MyApp"), "MyApp"
+        )
+        self.assertEqual(
+            icloud.label_for_container("iCloud~me~dayone~Day-One"), "Day-One"
+        )
+
+    def test_label_unknown(self):
+        self.assertEqual(icloud.label_for_container("SomeDir"), "SomeDir")
+
+    def test_discover_containers(self):
+        """Test discovery with a mock iCloud directory."""
+        tmpdir = tempfile.mkdtemp()
+        base = Path(tmpdir)
+        (base / "com~apple~CloudDocs").mkdir()
+        (base / "com~apple~Numbers").mkdir()
+        (base / "iCloud~com~example~TestApp").mkdir()
+        (base / ".hidden").mkdir()  # should be skipped
+        (base / "regular-file.txt").touch()  # should be skipped
+
+        containers = icloud.discover_containers(base=base)
+
+        names = [c["name"] for c in containers]
+        self.assertEqual(names[0], "com~apple~CloudDocs")  # always first
+        self.assertIn("com~apple~Numbers", names)
+        self.assertIn("iCloud~com~example~TestApp", names)
+        self.assertNotIn(".hidden", names)
+
+        labels = [c["label"] for c in containers]
+        self.assertIn("iCloud Drive", labels)
+        self.assertIn("Numbers", labels)
+        self.assertIn("TestApp", labels)
+
+        import shutil
+        shutil.rmtree(tmpdir)
+
+    def test_discover_missing_dir(self):
+        containers = icloud.discover_containers(base=Path("/nonexistent"))
+        self.assertEqual(containers, [])
+
+    def test_icloud_drive_sorted_first(self):
+        """iCloud Drive should always appear first regardless of sort order."""
+        tmpdir = tempfile.mkdtemp()
+        base = Path(tmpdir)
+        (base / "zzz~app").mkdir()
+        (base / "com~apple~CloudDocs").mkdir()
+        (base / "aaa~app").mkdir()
+
+        containers = icloud.discover_containers(base=base)
+        self.assertEqual(containers[0]["name"], "com~apple~CloudDocs")
+
+        import shutil
+        shutil.rmtree(tmpdir)
 
 
 if __name__ == "__main__":

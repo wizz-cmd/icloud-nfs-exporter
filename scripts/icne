@@ -9,60 +9,15 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from icne_lib import config as cfg  # noqa: E402
-from icne_lib import diagnose, nfs  # noqa: E402
+from icne_lib import diagnose, nfs, wizard  # noqa: E402
 
 
 def cmd_setup(args):
-    """Initial setup: create config directory and default config."""
-    print("Setting up icloud-nfs-exporter...\n")
-
-    # 1. Config directory
-    cfg.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"  Config directory: {cfg.CONFIG_DIR}")
-
-    # 2. Config file
-    if cfg.CONFIG_FILE.exists() and not args.force:
-        print(f"  Config file already exists: {cfg.CONFIG_FILE}")
-    else:
-        conf = cfg.default_config()
-        cfg.save_config(conf)
-        print(f"  Created config: {cfg.CONFIG_FILE}")
-
-    # 3. Mount base directory
-    conf = cfg.load_config()
-    mount_base = conf.get("general", {}).get("mount_base", cfg.DEFAULT_MOUNT_BASE)
-    os.makedirs(mount_base, exist_ok=True)
-    print(f"  Mount base: {mount_base}")
-
-    # 4. Check iCloud Drive
-    if cfg.ICLOUD_DRIVE.is_dir():
-        print(f"  iCloud Drive: {cfg.ICLOUD_DRIVE}")
-    else:
-        print(f"  WARNING: iCloud Drive not found at {cfg.ICLOUD_DRIVE}")
-
-    # 5. Launchd plist
-    plist_src = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..", "launchd", "com.wizz-cmd.icloud-nfs-exporter.plist.template",
+    """Run the interactive setup wizard."""
+    wizard.run(
+        force=args.force,
+        non_interactive=args.non_interactive,
     )
-    if os.path.exists(plist_src):
-        plist_dst = os.path.expanduser(
-            "~/Library/LaunchAgents/com.wizz-cmd.icloud-nfs-exporter.plist"
-        )
-        if not os.path.exists(plist_dst):
-            import shutil
-            content = open(plist_src).read()
-            content = content.replace("__USERNAME__", os.environ.get("USER", ""))
-            os.makedirs(os.path.dirname(plist_dst), exist_ok=True)
-            with open(plist_dst, "w") as f:
-                f.write(content)
-            print(f"  LaunchAgent: {plist_dst}")
-        else:
-            print(f"  LaunchAgent already exists: {plist_dst}")
-
-    print("\nSetup complete. Next steps:")
-    print("  1. Add folders:  icne add-folder ~/Library/Mobile\\ Documents/com~apple~CloudDocs")
-    print("  2. Run diagnostics:  icne diagnose")
 
 
 def cmd_add_folder(args):
@@ -179,9 +134,11 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     # setup
-    p_setup = sub.add_parser("setup", help="Initial setup and configuration")
+    p_setup = sub.add_parser("setup", help="Interactive setup wizard")
     p_setup.add_argument("--force", action="store_true",
                          help="Overwrite existing config")
+    p_setup.add_argument("--non-interactive", action="store_true",
+                         help="Use defaults without prompting")
 
     # add-folder
     p_add = sub.add_parser("add-folder", help="Add an iCloud folder to export")
