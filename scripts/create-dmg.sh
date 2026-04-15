@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD="${1:-$ROOT/dist}"
 APP_NAME="iCloud NFS Exporter"
-VERSION="0.1.0"
+VERSION="${VERSION:-0.1.0}"
 DMG_NAME="iCloud-NFS-Exporter-${VERSION}"
 
 APP="$BUILD/${APP_NAME}.app"

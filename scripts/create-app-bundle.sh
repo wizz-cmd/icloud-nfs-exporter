@@ -9,7 +9,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD="${1:-$ROOT/dist}"
 APP_NAME="iCloud NFS Exporter"
 BUNDLE_ID="com.wizz-cmd.icloud-nfs-exporter"
-VERSION="0.1.0"
+VERSION="${VERSION:-0.1.0}"
 
 APP="$BUILD/${APP_NAME}.app"
 CONTENTS="$APP/Contents"

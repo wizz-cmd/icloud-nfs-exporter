@@ -19,21 +19,13 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Build .app bundle
-        run: bash scripts/create-app-bundle.sh dist
-
-      - name: Create .dmg
-        run: bash scripts/create-dmg.sh dist
-
-      - name: Prepare release assets
+      - name: Build .app and .dmg
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          DMG="dist/iCloud-NFS-Exporter-${VERSION#v}.dmg"
-          # Rename with version tag
-          mv "$DMG" "dist/iCloud-NFS-Exporter-${VERSION}.dmg"
-          mv "$DMG.sha256" "dist/iCloud-NFS-Exporter-${VERSION}.dmg.sha256"
+          export VERSION="${GITHUB_REF_NAME#v}"
+          bash scripts/create-app-bundle.sh dist
+          bash scripts/create-dmg.sh dist
           echo "DMG=dist/iCloud-NFS-Exporter-${VERSION}.dmg" >> "$GITHUB_ENV"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
