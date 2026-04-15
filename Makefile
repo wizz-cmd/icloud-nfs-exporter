@@ -9,6 +9,7 @@ build:
 test:
 	swift test --package-path src/hydration
 	cd src/fuse && cargo test
+	python3 -m unittest discover -s tests -v
 
 lint:
 	swiftlint lint src/

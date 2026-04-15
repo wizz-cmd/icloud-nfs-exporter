@@ -2,31 +2,208 @@
 """icloud-nfs-exporter CLI tool."""
 
 import argparse
+import os
 import sys
 
+# Allow importing icne_lib from the same directory as this script
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-def cmd_setup(_args):
-    print("setup: not yet implemented")
+from icne_lib import config as cfg  # noqa: E402
+from icne_lib import diagnose, nfs  # noqa: E402
 
 
-def cmd_add_folder(_args):
-    print("add-folder: not yet implemented")
+def cmd_setup(args):
+    """Initial setup: create config directory and default config."""
+    print("Setting up icloud-nfs-exporter...\n")
+
+    # 1. Config directory
+    cfg.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"  Config directory: {cfg.CONFIG_DIR}")
+
+    # 2. Config file
+    if cfg.CONFIG_FILE.exists() and not args.force:
+        print(f"  Config file already exists: {cfg.CONFIG_FILE}")
+    else:
+        conf = cfg.default_config()
+        cfg.save_config(conf)
+        print(f"  Created config: {cfg.CONFIG_FILE}")
+
+    # 3. Mount base directory
+    conf = cfg.load_config()
+    mount_base = conf.get("general", {}).get("mount_base", cfg.DEFAULT_MOUNT_BASE)
+    os.makedirs(mount_base, exist_ok=True)
+    print(f"  Mount base: {mount_base}")
+
+    # 4. Check iCloud Drive
+    if cfg.ICLOUD_DRIVE.is_dir():
+        print(f"  iCloud Drive: {cfg.ICLOUD_DRIVE}")
+    else:
+        print(f"  WARNING: iCloud Drive not found at {cfg.ICLOUD_DRIVE}")
+
+    # 5. Launchd plist
+    plist_src = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "launchd", "com.wizz-cmd.icloud-nfs-exporter.plist.template",
+    )
+    if os.path.exists(plist_src):
+        plist_dst = os.path.expanduser(
+            "~/Library/LaunchAgents/com.wizz-cmd.icloud-nfs-exporter.plist"
+        )
+        if not os.path.exists(plist_dst):
+            import shutil
+            content = open(plist_src).read()
+            content = content.replace("__USERNAME__", os.environ.get("USER", ""))
+            os.makedirs(os.path.dirname(plist_dst), exist_ok=True)
+            with open(plist_dst, "w") as f:
+                f.write(content)
+            print(f"  LaunchAgent: {plist_dst}")
+        else:
+            print(f"  LaunchAgent already exists: {plist_dst}")
+
+    print("\nSetup complete. Next steps:")
+    print("  1. Add folders:  icne add-folder ~/Library/Mobile\\ Documents/com~apple~CloudDocs")
+    print("  2. Run diagnostics:  icne diagnose")
+
+
+def cmd_add_folder(args):
+    """Add an iCloud folder to the export list."""
+    try:
+        conf = cfg.add_folder(args.path, label=args.label)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    source = str(cfg.Path(args.path).expanduser().resolve())
+    mount = cfg.mount_point_for(source, conf)
+    os.makedirs(mount, exist_ok=True)
+
+    print(f"Added folder:")
+    print(f"  Source:  {source}")
+    print(f"  Mount:   {mount}")
+    print(f"  Label:   {args.label or cfg.Path(source).name}")
+
+    # Generate NFS export entry
+    network = conf.get("nfs", {}).get("allowed_network", "192.168.0.0/24")
+    entry = nfs.generate_exports_entry(str(mount), network)
+    print(f"\nNFS export line (for /etc/exports):")
+    print(f"  {entry}")
+
+    if args.apply_nfs:
+        entries = []
+        for folder in conf.get("folders", []):
+            mp = cfg.mount_point_for(folder["source"], conf)
+            entries.append(nfs.generate_exports_entry(str(mp), network))
+        new_exports = nfs.update_exports(entries)
+        print(f"\nUpdating /etc/exports (requires sudo)...")
+        try:
+            nfs.apply_exports(new_exports)
+            print("NFS exports updated and nfsd reloaded.")
+        except PermissionError:
+            print("Permission denied — run with sudo or use:", file=sys.stderr)
+            print(f"  sudo sh -c 'cat > /etc/exports' << 'EOF'", file=sys.stderr)
+            print(new_exports, file=sys.stderr)
+            print("EOF", file=sys.stderr)
+            print("  sudo nfsd update", file=sys.stderr)
+    else:
+        print("\nTo apply NFS exports, re-run with --apply-nfs or manually edit /etc/exports.")
+
+
+def cmd_remove_folder(args):
+    """Remove a folder from the export list."""
+    try:
+        cfg.remove_folder(args.path)
+        print(f"Removed: {args.path}")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_list(args):
+    """List configured folders."""
+    conf = cfg.load_config()
+    folders = conf.get("folders", [])
+    if not folders:
+        print("No folders configured. Run: icne add-folder <path>")
+        return
+    for f in folders:
+        mount = cfg.mount_point_for(f["source"], conf)
+        print(f"  {f.get('label', '?'):20s}  {f['source']}")
+        print(f"  {'':20s}  → {mount}")
 
 
 def cmd_diagnose(_args):
-    print("diagnose: not yet implemented")
+    """Run all diagnostic checks."""
+    print("icloud-nfs-exporter diagnostics\n")
+    checks = diagnose.run_all()
+    for check in checks:
+        print(check)
+    passed = sum(1 for c in checks if c.ok)
+    total = len(checks)
+    print(f"\n  {passed}/{total} checks passed")
+    if passed < total:
+        sys.exit(1)
+
+
+def cmd_exports(args):
+    """Show or update NFS exports."""
+    conf = cfg.load_config()
+    folders = conf.get("folders", [])
+    network = conf.get("nfs", {}).get("allowed_network", "192.168.0.0/24")
+
+    entries = []
+    for folder in folders:
+        mp = cfg.mount_point_for(folder["source"], conf)
+        entries.append(nfs.generate_exports_entry(str(mp), network))
+
+    if args.dry_run:
+        print("Generated /etc/exports content:\n")
+        print(nfs.update_exports(entries))
+    else:
+        new_content = nfs.update_exports(entries)
+        try:
+            nfs.apply_exports(new_content)
+            print(f"Updated /etc/exports with {len(entries)} export(s) and reloaded nfsd.")
+        except PermissionError:
+            print("Permission denied. Run with sudo.", file=sys.stderr)
+            sys.exit(1)
 
 
 def main():
     parser = argparse.ArgumentParser(
         prog="icne",
-        description="icloud-nfs-exporter CLI",
+        description="icloud-nfs-exporter — manage iCloud Drive NFS exports",
     )
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("setup", help="Initial setup and configuration")
-    sub.add_parser("add-folder", help="Add an iCloud folder to export")
-    sub.add_parser("diagnose", help="Run diagnostics")
+    # setup
+    p_setup = sub.add_parser("setup", help="Initial setup and configuration")
+    p_setup.add_argument("--force", action="store_true",
+                         help="Overwrite existing config")
+
+    # add-folder
+    p_add = sub.add_parser("add-folder", help="Add an iCloud folder to export")
+    p_add.add_argument("path", help="Path to iCloud folder")
+    p_add.add_argument("--label", help="Human-readable label")
+    p_add.add_argument("--apply-nfs", action="store_true",
+                       help="Update /etc/exports and reload nfsd (requires root)")
+
+    # remove-folder
+    p_rm = sub.add_parser("remove-folder", help="Remove a folder from exports")
+    p_rm.add_argument("path", help="Path to remove")
+
+    # list
+    sub.add_parser("list", help="List configured folders")
+
+    # diagnose
+    sub.add_parser("diagnose", help="Run diagnostic checks")
+
+    # exports
+    p_exp = sub.add_parser("exports", help="Show or apply NFS exports")
+    p_exp.add_argument("--dry-run", action="store_true",
+                       help="Print generated exports without applying")
 
     args = parser.parse_args()
     if args.command is None:
@@ -36,7 +213,10 @@ def main():
     commands = {
         "setup": cmd_setup,
         "add-folder": cmd_add_folder,
+        "remove-folder": cmd_remove_folder,
+        "list": cmd_list,
         "diagnose": cmd_diagnose,
+        "exports": cmd_exports,
     }
     commands[args.command](args)
 
