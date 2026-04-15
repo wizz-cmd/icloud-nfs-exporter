@@ -1,12 +1,8 @@
-/// Core library for the iCloud FUSE passthrough driver.
+pub mod ipc_client;
+pub mod ipc_protocol;
+pub mod path_utils;
+
 pub const VERSION: &str = "0.1.0";
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_version() {
-        assert_eq!(VERSION, "0.1.0");
-    }
-}
+pub use ipc_client::IpcClient;
+pub use ipc_protocol::{FileState, Request, Response};
