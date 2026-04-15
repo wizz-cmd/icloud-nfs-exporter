@@ -1,11 +1,13 @@
 import Cocoa
 import HydrationCore
+import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var config = ConfigReader.load()
     private var daemonRunning = false
+    private var settingsWindow: NSWindow?
 
     // MARK: - Lifecycle
 
@@ -17,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateIcon()
         rebuildMenu()
         startPolling()
+
+        // First launch — open settings if no config exists
+        if !FileManager.default.fileExists(atPath: ConfigReader.configPath.path) {
+            showSettings()
+        }
     }
 
     func applicationWillTerminate(_: Notification) {
@@ -93,22 +100,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Actions
         menu.addItem(.separator())
 
+        let settingsItem = NSMenuItem(
+            title: "Settings\u{2026}",
+            action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
         let refreshItem = NSMenuItem(
             title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
-
-        let configItem = NSMenuItem(
-            title: "Open Config\u{2026}",
-            action: #selector(openConfig), keyEquivalent: ",")
-        configItem.target = self
-        menu.addItem(configItem)
-
-        let diagnoseItem = NSMenuItem(
-            title: "Run Diagnostics\u{2026}",
-            action: #selector(runDiagnostics), keyEquivalent: "d")
-        diagnoseItem.target = self
-        menu.addItem(diagnoseItem)
 
         menu.addItem(.separator())
 
@@ -128,38 +129,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Actions
 
-    @objc private func refresh() {
-        config = ConfigReader.load()
-        checkStatus()
-        rebuildMenu()
+    @objc private func showSettings() {
+        // Reuse existing window if open
+        if let w = settingsWindow, w.isVisible {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let view = SettingsView(
+            config: config,
+            onSave: { [weak self] updated in
+                self?.saveConfig(updated)
+                self?.settingsWindow?.close()
+            },
+            onCancel: { [weak self] in
+                self?.settingsWindow?.close()
+            }
+        )
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 460),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false)
+        window.title = "iCloud NFS Exporter Settings"
+        window.contentView = NSHostingView(rootView: view)
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow = window
     }
 
-    @objc private func openConfig() {
-        let path = ConfigReader.configPath
-        if FileManager.default.fileExists(atPath: path.path) {
-            NSWorkspace.shared.open(path)
-        } else {
+    private func saveConfig(_ updated: ConfigReader) {
+        do {
+            try updated.save()
+            config = updated
+            rebuildMenu()
+        } catch {
             let alert = NSAlert()
-            alert.messageText = "Config not found"
-            alert.informativeText =
-                "Run 'icne setup' to create the configuration file."
+            alert.messageText = "Failed to save configuration"
+            alert.informativeText = error.localizedDescription
             alert.runModal()
         }
     }
 
-    @objc private func runDiagnostics() {
-        let scripts = Bundle.main.bundlePath
-            .components(separatedBy: "/src/app/").first ?? "."
-        let icne = "\(scripts)/scripts/icne"
-        if FileManager.default.isExecutableFile(atPath: icne) {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            task.arguments = [
-                "-a", "Terminal",
-                icne, "diagnose",
-            ]
-            try? task.run()
-        }
+    @objc private func refresh() {
+        config = ConfigReader.load()
+        checkStatus()
+        rebuildMenu()
     }
 
     @objc private func quit() {
