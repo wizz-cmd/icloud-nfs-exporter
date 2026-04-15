@@ -37,9 +37,13 @@ iCloud NFS Exporter v${VERSION}
 
 Installation:
   1. Drag "iCloud NFS Exporter" to the Applications folder.
-  2. Open the app — it will appear in your menu bar.
-  3. To install the command-line tool, open Terminal and run:
-     /Applications/iCloud\ NFS\ Exporter.app/Contents/MacOS/install-cli
+  2. The app is not code-signed, so macOS will block it on first launch.
+     To allow it, open Terminal and run:
+       xattr -cr "/Applications/iCloud NFS Exporter.app"
+     Or: right-click the app > Open > click "Open" in the dialog.
+  3. Open the app — it will appear in your menu bar (cloud icon).
+  4. To install the command-line tool, open Terminal and run:
+       /Applications/iCloud\ NFS\ Exporter.app/Contents/MacOS/install-cli
 
 Getting started:
   icne setup        # Interactive setup wizard

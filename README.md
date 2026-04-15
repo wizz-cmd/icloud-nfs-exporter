@@ -25,7 +25,10 @@ NFS clients (Linux, macOS, BSD, ...) can read any file as if it were local — d
 
 1. Download **iCloud-NFS-Exporter-v*.dmg** from the [latest release](https://github.com/wizz-cmd/icloud-nfs-exporter/releases/latest).
 2. Open the `.dmg` and drag **iCloud NFS Exporter** to your **Applications** folder.
-3. Open the app — it will appear in your menu bar (cloud icon, top right).
+3. On first launch, macOS may block the app because it is not code-signed. To allow it:
+   - **Right-click** the app and choose **Open**, then click **Open** in the dialog, or
+   - Run in Terminal: `xattr -cr "/Applications/iCloud NFS Exporter.app"`
+4. Open the app — it will appear in your menu bar (cloud icon, top right).
 
 ### Install the command-line tool (optional)
 
