@@ -5,7 +5,15 @@ import PackageDescription
 let package = Package(
     name: "MenuBarApp",
     platforms: [.macOS(.v13)],
+    dependencies: [
+        .package(path: "../hydration"),
+    ],
     targets: [
-        .executableTarget(name: "MenuBarApp"),
+        .executableTarget(
+            name: "MenuBarApp",
+            dependencies: [
+                .product(name: "HydrationCore", package: "Hydration"),
+            ]
+        ),
     ]
 )
