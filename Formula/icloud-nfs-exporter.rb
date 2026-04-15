@@ -1,7 +1,7 @@
 class IcloudNfsExporter < Formula
   desc "Export iCloud Drive folders via NFS with transparent file hydration"
   homepage "https://github.com/wizz-cmd/icloud-nfs-exporter"
-  url "https://github.com/wizz-cmd/icloud-nfs-exporter/archive/refs/tags/v0.1.0.tar.gz"
+  url "https://github.com/wizz-cmd/icloud-nfs-exporter/archive/refs/tags/v0.2.0.tar.gz"
   sha256 "PLACEHOLDER"
   license "MIT"
   head "https://github.com/wizz-cmd/icloud-nfs-exporter.git", branch: "main"
@@ -57,7 +57,7 @@ class IcloudNfsExporter < Formula
   end
 
   test do
-    assert_match "0.1.0", shell_output("#{bin}/HydrationDaemon --version")
+    assert_match "0.2.0", shell_output("#{bin}/HydrationDaemon --version")
     assert_match "icne", shell_output("#{bin}/icne --help")
   end
 end

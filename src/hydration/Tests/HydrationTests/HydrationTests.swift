@@ -182,7 +182,7 @@ final class HydrationManagerTests: XCTestCase {
 
 final class VersionTests: XCTestCase {
     func testVersion() {
-        XCTAssertEqual(HydrationCore.version, "0.1.0")
+        XCTAssertEqual(HydrationCore.version, "0.2.0")
     }
 
     func testDefaultSocketPath() {

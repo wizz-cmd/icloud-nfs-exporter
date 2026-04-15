@@ -12,7 +12,7 @@ make test
 ```
 
 **Requirements:**
-- macOS 13+ with Xcode Command Line Tools
+- macOS 14+ with Xcode Command Line Tools
 - Rust (via [rustup](https://rustup.rs/))
 - Python 3.11+
 - [macFUSE](https://osxfuse.github.io/) (optional, for FUSE driver)

@@ -14,7 +14,7 @@ NFS clients (Linux, macOS, BSD, ...) can read any file as if it were local — d
 
 ## Requirements
 
-- macOS 13 Ventura or later (Intel or Apple Silicon)
+- macOS 14 Sonoma or later (Intel or Apple Silicon)
 - [macFUSE](https://osxfuse.github.io/) for the FUSE passthrough driver
 - Python 3.11+
 - iCloud Drive enabled in System Settings

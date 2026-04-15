@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-04-16
+
+### Changed
+
+- **Menu bar app rewritten** with SwiftUI `@main App` architecture, replacing
+  manual AppKit lifecycle (`main.swift` + `NSApplicationDelegate`).
+- **Settings window** now uses native SwiftUI `Settings` scene with `TabView`
+  (General, Folders, Network, Advanced tabs) and `.formStyle(.grouped)`.
+  Opens automatically via Cmd+,.
+- **Menu bar panel** uses `MenuBarExtra(.window)` for a rich SwiftUI dropdown
+  with status icon, folder list, and action buttons.
+- **State management** uses `@Observable` class (`AppState`) instead of
+  scattered instance variables on AppDelegate.
+- **Deployment target** bumped from macOS 13 (Ventura) to macOS 14 (Sonoma)
+  across all Swift packages for `@Observable` and `SettingsLink` support.
+
+### Added
+
+- **First-launch onboarding** — Settings opens automatically when no config
+  file exists.
+- **VoiceOver accessibility** on all interactive elements — labels, hints,
+  combined accessibility elements for logical grouping.
+- **Keyboard shortcuts** throughout — Cmd+R (Refresh), Cmd+, (Settings),
+  Cmd+Q (Quit).
+- **Standard macOS app menu bar** — About, Edit, Window, Help menus provided
+  automatically by SwiftUI App lifecycle.
+- **.dmg distribution** — drag-to-Applications disk image with README,
+  built by GitHub Actions release workflow.
+- **Apple Design Award research** — comprehensive design guidelines and
+  implementation plan in `docs/research/`.
+
+### Fixed
+
+- "Config not found" alert replaced with auto-opening Settings window.
+- Menu bar icon now uses SF Symbols (adapts to light/dark/tinted menu bars).
+
 ## [0.1.0] - 2026-04-15
 
 ### Added
@@ -42,4 +78,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **CI**: GitHub Actions on macOS 15, Swift + Rust + Python test suites
   (62 tests total).
 
+[0.2.0]: https://github.com/wizz-cmd/icloud-nfs-exporter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wizz-cmd/icloud-nfs-exporter/releases/tag/v0.1.0
