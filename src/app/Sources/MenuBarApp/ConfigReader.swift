@@ -9,7 +9,7 @@ struct ConfigReader {
     var allowedNetwork: String
     var folders: [FolderEntry]
 
-    struct FolderEntry {
+    struct FolderEntry: Equatable {
         var source: String
         var label: String
     }
