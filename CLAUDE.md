@@ -1,5 +1,10 @@
 # icloud-nfs-exporter
 
+## Session Rules
+
+- **Start of every session**: Read `HANDOVER.md` before doing anything else. It contains the current project state, what works, what's broken, and the immediate next step.
+- **After every commit**: Update `HANDOVER.md` to reflect what changed — especially the "What Works", "What Does NOT Work Yet", "Immediate Next Step", and "Version" sections. Keep it concise and current.
+
 ## Project Goal
 
 A macOS service (Intel & Apple Silicon) that exports iCloud Drive folders via NFS, transparently handling all iCloud-specific behavior. NFS clients can access any file — whether it's already local or still in iCloud — without any manual intervention.
@@ -47,11 +52,6 @@ icloud-nfs-exporter/
 3. **FUSE or NFS shim** — a FUSE filesystem or NFS re-export layer sits between iCloud Drive and the NFS server, intercepting VFS calls to trigger hydration.
 4. **Caching & consistency** — avoid redundant downloads; keep NFS file handles stable across hydration cycles.
 5. **macOS SIP / sandbox constraints** — the service must work within macOS security boundaries.
-
-## Session Rules
-
-- **Start of every session**: Read `HANDOVER.md` before doing anything else. It contains the current project state, what works, what's broken, and the immediate next step.
-- **After every commit**: Update `HANDOVER.md` to reflect what changed — especially the "What Works", "What Does NOT Work Yet", "Immediate Next Step", and "Version" sections. Keep it concise and current.
 
 ## Development Guidelines
 
