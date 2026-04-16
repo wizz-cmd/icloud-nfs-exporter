@@ -1,6 +1,15 @@
 import Foundation
 
-/// Unix-domain-socket server that accepts hydration requests from the FUSE driver.
+/// Unix domain socket server that listens for hydration requests from the FUSE driver.
+///
+/// `IPCServer` binds a `SOCK_STREAM` Unix domain socket at the configured path,
+/// accepts incoming connections, reads ``IPCRequest`` messages using the
+/// ``IPCWireFormat`` framing protocol, dispatches them to ``HydrationManager``,
+/// and writes back ``IPCResponse`` messages. Each client connection is handled
+/// in its own `Task`, so multiple FUSE requests can be served concurrently.
+///
+/// The socket is created with mode `0600` (owner-only access) and is automatically
+/// unlinked when the server starts (to remove stale sockets) and when it stops.
 public final class IPCServer: @unchecked Sendable {
     private let socketPath: String
     private let manager: HydrationManager
@@ -8,6 +17,10 @@ public final class IPCServer: @unchecked Sendable {
     private var acceptSource: DispatchSourceRead?
     private let queue = DispatchQueue(label: "ipc-server", qos: .userInitiated)
 
+    /// Creates a new IPC server.
+    ///
+    /// - Parameter socketPath: The filesystem path for the Unix domain socket.
+    /// - Parameter manager: The ``HydrationManager`` that handles incoming requests.
     public init(socketPath: String, manager: HydrationManager) {
         self.socketPath = socketPath
         self.manager = manager
@@ -15,7 +28,16 @@ public final class IPCServer: @unchecked Sendable {
 
     deinit { stop() }
 
-    /// Bind, listen, and start accepting connections.
+    /// Binds the socket, starts listening, and begins accepting client connections.
+    ///
+    /// Any existing socket file at the configured path is removed before binding.
+    /// Connections are accepted asynchronously via a `DispatchSource` and each
+    /// client is handled in a separate `Task`.
+    ///
+    /// - Throws: ``IPCServerError/socketCreation(errno:)`` if the socket cannot be created,
+    ///   ``IPCServerError/pathTooLong`` if the socket path exceeds the `sockaddr_un` limit,
+    ///   ``IPCServerError/bind(errno:)`` if binding fails, or
+    ///   ``IPCServerError/listen(errno:)`` if the listen call fails.
     public func start() throws {
         unlink(socketPath)
 
@@ -65,7 +87,10 @@ public final class IPCServer: @unchecked Sendable {
         source.resume()
     }
 
-    /// Tear down the server.
+    /// Stops accepting connections, closes the server socket, and removes the socket file.
+    ///
+    /// It is safe to call `stop()` multiple times; subsequent calls are no-ops.
+    /// This method is also called automatically from `deinit`.
     public func stop() {
         acceptSource?.cancel()
         acceptSource = nil
@@ -161,9 +186,14 @@ public final class IPCServer: @unchecked Sendable {
     }
 }
 
+/// Errors produced by ``IPCServer`` during socket setup.
 public enum IPCServerError: Error {
+    /// The `socket()` system call failed. The associated value is the `errno`.
     case socketCreation(errno: Int32)
+    /// The socket path exceeds the maximum length allowed by `sockaddr_un`.
     case pathTooLong
+    /// The `bind()` system call failed. The associated value is the `errno`.
     case bind(errno: Int32)
+    /// The `listen()` system call failed. The associated value is the `errno`.
     case listen(errno: Int32)
 }

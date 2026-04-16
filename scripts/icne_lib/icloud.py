@@ -22,11 +22,16 @@ _APPLE_LABELS = {
 def label_for_container(name: str) -> str:
     """Derive a human-readable label from a container directory name.
 
-    Examples:
-        com~apple~CloudDocs        → "iCloud Drive"
-        iCloud~com~example~MyApp   → "MyApp"
-        com~apple~Numbers          → "Numbers"
-        SomeOtherDir               → "SomeOtherDir"
+    Look up *name* in the well-known Apple container table first.
+    For third-party ``iCloud~com~...`` names, extract the last
+    tilde-separated component.  Fall back to *name* unchanged.
+
+    Args:
+        name: The raw directory name inside ``~/Library/Mobile Documents``
+            (e.g. ``"com~apple~CloudDocs"``, ``"iCloud~com~example~MyApp"``).
+
+    Returns:
+        A human-friendly label such as ``"iCloud Drive"`` or ``"MyApp"``.
     """
     if name in _APPLE_LABELS:
         return _APPLE_LABELS[name]
@@ -42,11 +47,23 @@ def label_for_container(name: str) -> str:
 
 def discover_containers(
     base: Path | None = None,
-) -> list[dict]:
-    """List available iCloud containers.
+) -> list[dict[str, str]]:
+    """List available iCloud containers under *base*.
 
-    Returns a list of dicts with keys: path, name, label.
-    Sorted with iCloud Drive first, then alphabetically by label.
+    Scan the iCloud ``Mobile Documents`` directory for
+    sub-directories, derive labels with ``label_for_container``,
+    and return them sorted with iCloud Drive first, then
+    alphabetically by label.
+
+    Args:
+        base: Root directory to scan.  Defaults to
+            ``~/Library/Mobile Documents`` when ``None``.
+
+    Returns:
+        A list of dicts, each with keys ``"path"`` (absolute path
+        string), ``"name"`` (directory basename), and ``"label"``
+        (human-readable label).  Returns an empty list if *base*
+        does not exist.
     """
     if base is None:
         base = cfg.ICLOUD_DRIVE

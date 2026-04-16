@@ -1,7 +1,7 @@
 PREFIX ?= /usr/local
 SHARE_DIR = $(PREFIX)/share/icloud-nfs-exporter
 
-.PHONY: build build-release test lint clean install uninstall help
+.PHONY: build build-release test lint clean install uninstall help docs
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | sort | \
@@ -55,6 +55,13 @@ uninstall: ## Remove installed files
 	rm -f $(PREFIX)/bin/icne
 	rm -rf $(SHARE_DIR)
 	@echo "Uninstalled. LaunchAgent and config are preserved."
+
+# ── Docs ──
+
+docs: ## Generate API documentation (Swift DocC + Rust rustdoc)
+	swift package --package-path src/hydration generate-documentation --target HydrationCore 2>/dev/null || swift package --package-path src/hydration dump-symbol-graph 2>/dev/null || echo "DocC: run 'xcodebuild docbuild' for full DocC output"
+	cd src/fuse && cargo doc --no-deps --document-private-items
+	@echo "Rust docs: src/fuse/target/doc/fuse_core/index.html"
 
 # ── Clean ──
 

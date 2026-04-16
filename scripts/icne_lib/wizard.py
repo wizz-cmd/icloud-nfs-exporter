@@ -9,7 +9,16 @@ from . import diagnose, icloud, nfs
 
 
 def _ask(prompt: str, default: str = "") -> str:
-    """Prompt the user, showing a default in brackets."""
+    """Prompt the user for text input, showing a default in brackets.
+
+    Args:
+        prompt: The question to display.
+        default: Value returned when the user presses Enter without
+            typing anything.
+
+    Returns:
+        The user's input, or *default* if the input was empty.
+    """
     if default:
         raw = input(f"  {prompt} [{default}]: ").strip()
         return raw if raw else default
@@ -17,7 +26,16 @@ def _ask(prompt: str, default: str = "") -> str:
 
 
 def _ask_yn(prompt: str, default: bool = True) -> bool:
-    """Yes/no prompt."""
+    """Prompt the user with a yes/no question.
+
+    Args:
+        prompt: The question to display.
+        default: The answer used when the user presses Enter without
+            typing anything.
+
+    Returns:
+        ``True`` for yes, ``False`` for no.
+    """
     hint = "Y/n" if default else "y/N"
     raw = input(f"  {prompt} [{hint}] ").strip().lower()
     if not raw:
@@ -26,6 +44,11 @@ def _ask_yn(prompt: str, default: bool = True) -> bool:
 
 
 def _header(text: str) -> None:
+    """Print a centred, box-framed header line to stdout.
+
+    Args:
+        text: The title text to display inside the box.
+    """
     width = max(len(text) + 4, 44)
     print()
     print(f"  {'=' * width}")
@@ -35,11 +58,28 @@ def _header(text: str) -> None:
 
 
 def _step(n: int, title: str) -> None:
+    """Print a numbered step heading to stdout.
+
+    Args:
+        n: Step number.
+        title: Short description of the step.
+    """
     print(f"\n  Step {n}: {title}\n")
 
 
 def run(*, force: bool = False, non_interactive: bool = False) -> None:
-    """Run the interactive setup wizard."""
+    """Run the interactive setup wizard.
+
+    Walk the user through prerequisite checks, folder selection,
+    network configuration, config-file generation, and LaunchAgent
+    installation.
+
+    Args:
+        force: When ``True``, overwrite existing configuration and
+            re-install the LaunchAgent instead of merging.
+        non_interactive: When ``True``, accept all defaults without
+            prompting -- suitable for scripted/CI usage.
+    """
 
     _header("icloud-nfs-exporter  —  Setup Wizard")
 

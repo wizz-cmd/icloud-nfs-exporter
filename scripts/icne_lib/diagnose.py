@@ -9,14 +9,20 @@ from . import ipc, nfs
 
 
 class Check:
-    """Result of a single diagnostic check."""
+    """Represent the result of a single diagnostic check.
 
-    def __init__(self, name: str, ok: bool, detail: str = ""):
+    Attributes:
+        name: Short human-readable label for the check.
+        ok: ``True`` if the check passed.
+        detail: Optional detail message shown after the status.
+    """
+
+    def __init__(self, name: str, ok: bool, detail: str = "") -> None:
         self.name = name
         self.ok = ok
         self.detail = detail
 
-    def __str__(self):
+    def __str__(self) -> str:
         status = "OK" if self.ok else "FAIL"
         line = f"  [{status:>4}]  {self.name}"
         if self.detail:
@@ -25,7 +31,12 @@ class Check:
 
 
 def check_icloud_drive() -> Check:
-    """Check if iCloud Drive exists at the expected path."""
+    """Check whether iCloud Drive exists at the expected path.
+
+    Returns:
+        A ``Check`` that passes when ``~/Library/Mobile Documents``
+        is a directory, including the item count in the detail.
+    """
     path = cfg.ICLOUD_DRIVE
     if path.is_dir():
         count = sum(1 for _ in path.iterdir())
@@ -34,7 +45,12 @@ def check_icloud_drive() -> Check:
 
 
 def check_config() -> Check:
-    """Check if the config file exists and is valid."""
+    """Check whether the config file exists and is valid TOML.
+
+    Returns:
+        A ``Check`` that passes when the config file can be loaded
+        without errors.
+    """
     if not cfg.CONFIG_FILE.exists():
         return Check("Config file", False, f"not found — run 'icne setup'")
     try:
@@ -46,7 +62,12 @@ def check_config() -> Check:
 
 
 def check_daemon() -> Check:
-    """Check if the hydration daemon is running."""
+    """Check whether the hydration daemon is running and responding.
+
+    Returns:
+        A ``Check`` that passes when the daemon answers a ping via
+        its Unix socket.
+    """
     c = cfg.load_config()
     socket_path = c.get("general", {}).get("socket_path", cfg.DEFAULT_SOCKET)
     client = ipc.IpcClient(socket_path, timeout=3.0)
@@ -58,7 +79,15 @@ def check_daemon() -> Check:
 
 
 def check_macfuse() -> Check:
-    """Check if macFUSE is installed."""
+    """Check whether macFUSE is installed.
+
+    Look for ``/Library/Filesystems/macfuse.fs`` and, if found,
+    attempt to read its ``CFBundleVersion``.
+
+    Returns:
+        A ``Check`` that passes when the macFUSE filesystem bundle
+        exists on disk.
+    """
     macfuse_fs = Path("/Library/Filesystems/macfuse.fs")
     if macfuse_fs.exists():
         # Try to get version
@@ -79,7 +108,12 @@ def check_macfuse() -> Check:
 
 
 def check_nfsd() -> Check:
-    """Check if nfsd is running."""
+    """Check whether nfsd is running and report active exports.
+
+    Returns:
+        A ``Check`` that passes when ``nfsd status`` reports the
+        daemon as active.
+    """
     if nfs.nfsd_is_running():
         exports = nfs.show_exports()
         n = max(0, len(exports) - 1)  # first line is header
@@ -88,7 +122,13 @@ def check_nfsd() -> Check:
 
 
 def check_mount_base() -> Check:
-    """Check if the mount base directory exists."""
+    """Check whether the mount-base directory exists.
+
+    Returns:
+        A ``Check`` that passes when the configured ``mount_base``
+        directory is present and lists how many sub-mount directories
+        it contains.
+    """
     c = cfg.load_config()
     base = Path(c.get("general", {}).get("mount_base", cfg.DEFAULT_MOUNT_BASE))
     if base.is_dir():
@@ -98,7 +138,12 @@ def check_mount_base() -> Check:
 
 
 def check_rust_toolchain() -> Check:
-    """Check if Rust/Cargo is available."""
+    """Check whether the Rust toolchain (cargo) is available on ``$PATH``.
+
+    Returns:
+        A ``Check`` that passes when ``cargo --version`` succeeds,
+        including the version string in the detail.
+    """
     if shutil.which("cargo"):
         r = subprocess.run(["cargo", "--version"], capture_output=True, text=True)
         return Check("Rust toolchain", True, r.stdout.strip())
@@ -106,7 +151,13 @@ def check_rust_toolchain() -> Check:
 
 
 def run_all() -> list[Check]:
-    """Run all diagnostic checks."""
+    """Run all diagnostic checks and return the results.
+
+    Returns:
+        A list of ``Check`` objects, one per diagnostic, in a fixed
+        order: iCloud Drive, config, daemon, macFUSE, nfsd,
+        mount base, Rust toolchain.
+    """
     return [
         check_icloud_drive(),
         check_config(),

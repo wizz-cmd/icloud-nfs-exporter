@@ -1,23 +1,79 @@
+//! Blocking IPC client for the hydration daemon.
+//!
+//! [`IpcClient`] connects to the Swift hydration daemon over a Unix domain
+//! socket, sends [`Request`]s, and reads [`Response`]s using the length-prefixed
+//! JSON wire format defined in [`crate::ipc_protocol`].
+//!
+//! Each call to [`IpcClient::send`] opens a new connection, sends exactly one
+//! request, reads the response, and closes the connection. This makes the
+//! client safe to use from multiple threads (each call is independent).
+//!
+//! # Examples
+//!
+//! ```rust,no_run
+//! use fuse_core::IpcClient;
+//! use std::time::Duration;
+//!
+//! let client = IpcClient::new("/var/run/hydrated.sock")
+//!     .with_timeout(Duration::from_secs(60));
+//!
+//! // Health check
+//! client.ping().expect("daemon not responding");
+//!
+//! // Query a file's state
+//! let state = client.query_state("/Users/me/iCloud/doc.pdf").unwrap();
+//! println!("file state: {:?}", state);
+//!
+//! // Hydrate (download) an evicted file
+//! client.hydrate("/Users/me/iCloud/doc.pdf").unwrap();
+//! ```
+
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use crate::ipc_protocol::{self, FileState, Request, Response};
 
-/// Client for the hydration daemon IPC socket.
+/// Blocking client for communicating with the hydration daemon over a Unix domain socket.
+///
+/// The client is configured once (socket path + timeout) and can then be used
+/// to send individual requests. Each call opens a fresh connection, so there is
+/// no persistent socket state to manage.
+///
+/// # Examples
+///
+/// ```rust
+/// use fuse_core::IpcClient;
+///
+/// let client = IpcClient::new("/tmp/hydrated.sock");
+/// assert_eq!(client.socket_path(), "/tmp/hydrated.sock");
+/// ```
 pub struct IpcClient {
     socket_path: String,
     timeout: Duration,
 }
 
+/// Errors that can occur during IPC communication with the hydration daemon.
+///
+/// Each variant wraps the underlying cause so that callers can distinguish
+/// between connection failures, I/O errors, serialization issues, and
+/// application-level errors.
 #[derive(Debug)]
 pub enum IpcError {
+    /// Failed to connect to the Unix domain socket (daemon may not be running).
     Connect(io::Error),
+    /// An I/O error occurred during read or write on an established connection.
     Io(io::Error),
+    /// Failed to serialize the request to JSON.
     Encode(serde_json::Error),
+    /// Failed to deserialize the response from JSON.
     Decode(serde_json::Error),
+    /// The daemon reported a response larger than the 1 MiB safety limit.
     ResponseTooLarge(u32),
+    /// The daemon returned a response type that does not match the request
+    /// (e.g., a `Pong` in reply to a `QueryState`).
     UnexpectedResponse,
+    /// The daemon reported that hydration failed, with an optional error message.
     HydrationFailed(String),
 }
 
@@ -38,6 +94,23 @@ impl std::fmt::Display for IpcError {
 impl std::error::Error for IpcError {}
 
 impl IpcClient {
+    /// Create a new client that will connect to the given Unix socket path.
+    ///
+    /// No connection is established until [`send`](Self::send) (or a
+    /// convenience method like [`ping`](Self::ping)) is called.
+    ///
+    /// The default read timeout is 300 seconds (5 minutes), which accommodates
+    /// large-file hydrations. Use [`with_timeout`](Self::with_timeout) to
+    /// override.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use fuse_core::IpcClient;
+    ///
+    /// let client = IpcClient::new("/var/run/hydrated.sock");
+    /// assert_eq!(client.socket_path(), "/var/run/hydrated.sock");
+    /// ```
     pub fn new(socket_path: impl Into<String>) -> Self {
         Self {
             socket_path: socket_path.into(),
@@ -45,16 +118,46 @@ impl IpcClient {
         }
     }
 
+    /// Set the read timeout for responses from the daemon.
+    ///
+    /// This is a builder-style method that consumes and returns `self`.
+    /// The timeout applies to the entire response read (length prefix + payload).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use fuse_core::IpcClient;
+    /// use std::time::Duration;
+    ///
+    /// let client = IpcClient::new("/tmp/test.sock")
+    ///     .with_timeout(Duration::from_secs(60));
+    /// ```
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
+    /// Return the Unix socket path this client is configured to connect to.
     pub fn socket_path(&self) -> &str {
         &self.socket_path
     }
 
-    /// Send a request and return the response.
+    /// Send a request to the daemon and return its response.
+    ///
+    /// Opens a new Unix domain socket connection, writes the wire-encoded
+    /// request, reads the length-prefixed response, and deserializes it.
+    /// The connection is closed when this method returns.
+    ///
+    /// Responses larger than 1 MiB are rejected with [`IpcError::ResponseTooLarge`]
+    /// as a safety measure.
+    ///
+    /// # Errors
+    ///
+    /// - [`IpcError::Connect`] -- the daemon socket is unreachable.
+    /// - [`IpcError::Io`] -- read/write error on the connection.
+    /// - [`IpcError::Encode`] -- the request could not be serialized.
+    /// - [`IpcError::Decode`] -- the response could not be deserialized.
+    /// - [`IpcError::ResponseTooLarge`] -- the response exceeds the 1 MiB limit.
     pub fn send(&self, request: &Request) -> Result<Response, IpcError> {
         let mut stream =
             UnixStream::connect(&self.socket_path).map_err(IpcError::Connect)?;
@@ -84,7 +187,16 @@ impl IpcClient {
         ipc_protocol::wire_decode(&resp_buf).map_err(IpcError::Decode)
     }
 
-    /// Health check — returns Ok(()) if the daemon responds with Pong.
+    /// Send a ping and verify the daemon replies with a pong.
+    ///
+    /// This is the simplest health check: it confirms the daemon is running,
+    /// listening on the socket, and able to process requests.
+    ///
+    /// # Errors
+    ///
+    /// - Any [`IpcError`] variant from [`send`](Self::send).
+    /// - [`IpcError::UnexpectedResponse`] if the daemon replies with something
+    ///   other than [`Response::Pong`].
     pub fn ping(&self) -> Result<(), IpcError> {
         match self.send(&Request::Ping)? {
             Response::Pong => Ok(()),
@@ -92,7 +204,16 @@ impl IpcClient {
         }
     }
 
-    /// Query the hydration state of a file.
+    /// Query the hydration state of a file in iCloud Drive.
+    ///
+    /// Returns the current [`FileState`] for the file at `path`. This is a
+    /// non-mutating operation -- it does not trigger a download.
+    ///
+    /// # Errors
+    ///
+    /// - Any [`IpcError`] variant from [`send`](Self::send).
+    /// - [`IpcError::UnexpectedResponse`] if the daemon does not reply with
+    ///   [`Response::State`].
     pub fn query_state(&self, path: &str) -> Result<FileState, IpcError> {
         match self.send(&Request::QueryState {
             path: path.to_string(),
@@ -102,7 +223,18 @@ impl IpcClient {
         }
     }
 
-    /// Request hydration of an evicted file (blocks until complete).
+    /// Request hydration of an evicted file and block until it completes.
+    ///
+    /// If the file is already local, the daemon typically returns success
+    /// immediately. For evicted files, this call blocks until the download
+    /// finishes or fails (subject to the client's read timeout).
+    ///
+    /// # Errors
+    ///
+    /// - Any [`IpcError`] variant from [`send`](Self::send).
+    /// - [`IpcError::HydrationFailed`] if the daemon reports a download failure.
+    /// - [`IpcError::UnexpectedResponse`] if the daemon does not reply with
+    ///   [`Response::HydrationResult`].
     pub fn hydrate(&self, path: &str) -> Result<(), IpcError> {
         match self.send(&Request::Hydrate {
             path: path.to_string(),
