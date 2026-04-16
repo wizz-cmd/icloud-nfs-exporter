@@ -48,6 +48,11 @@ icloud-nfs-exporter/
 4. **Caching & consistency** — avoid redundant downloads; keep NFS file handles stable across hydration cycles.
 5. **macOS SIP / sandbox constraints** — the service must work within macOS security boundaries.
 
+## Session Rules
+
+- **Start of every session**: Read `HANDOVER.md` before doing anything else. It contains the current project state, what works, what's broken, and the immediate next step.
+- **After every commit**: Update `HANDOVER.md` to reflect what changed — especially the "What Works", "What Does NOT Work Yet", "Immediate Next Step", and "Version" sections. Keep it concise and current.
+
 ## Development Guidelines
 
 - Always check what already exists before writing new code (brctl, macFUSE, nfs-ganesha, etc.).
