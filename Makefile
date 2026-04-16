@@ -1,17 +1,21 @@
 PREFIX ?= /usr/local
 SHARE_DIR = $(PREFIX)/share/icloud-nfs-exporter
 
-.PHONY: build build-release test lint clean install uninstall
+.PHONY: build build-release test lint clean install uninstall help
+
+help: ## Show available targets
+	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*##"}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 # ── Build ──
 
-build:
+build: ## Debug build (Swift + Rust)
 	swift build --package-path src/hydration
 	swift build --package-path src/app
 	swift build --package-path src/helper
 	cd src/fuse && cargo build
 
-build-release:
+build-release: ## Optimised release build
 	swift build --package-path src/hydration -c release
 	swift build --package-path src/app -c release
 	swift build --package-path src/helper -c release
@@ -19,21 +23,21 @@ build-release:
 
 # ── Test ──
 
-test:
+test: ## Run all tests (Swift + Rust + Python)
 	swift test --package-path src/hydration
 	cd src/fuse && cargo test
 	python3 -m unittest discover -s tests -v
 
 # ── Lint ──
 
-lint:
+lint: ## Lint all languages
 	swiftlint lint src/
 	cd src/fuse && cargo clippy -- -D warnings
 	ruff check scripts/
 
 # ── Install / Uninstall ──
 
-install: build-release
+install: build-release ## Build and install to PREFIX (/usr/local)
 	install -d $(PREFIX)/bin
 	install -d $(SHARE_DIR)/scripts/icne_lib
 	install -d $(SHARE_DIR)/launchd
@@ -45,7 +49,7 @@ install: build-release
 	ln -sf $(SHARE_DIR)/scripts/icne $(PREFIX)/bin/icne
 	@echo "Installed to $(PREFIX). Run 'icne setup' to configure."
 
-uninstall:
+uninstall: ## Remove installed files
 	rm -f $(PREFIX)/bin/HydrationDaemon
 	rm -f $(PREFIX)/bin/icloud-nfs-exporter-app
 	rm -f $(PREFIX)/bin/icne
@@ -54,7 +58,7 @@ uninstall:
 
 # ── Clean ──
 
-clean:
+clean: ## Remove build artifacts
 	swift package --package-path src/hydration clean
 	swift package --package-path src/app clean
 	swift package --package-path src/helper clean

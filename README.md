@@ -1,6 +1,13 @@
 # iCloud NFS Exporter
 
+[![CI](https://github.com/wizz-cmd/icloud-nfs-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/wizz-cmd/icloud-nfs-exporter/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/wizz-cmd/icloud-nfs-exporter)](https://github.com/wizz-cmd/icloud-nfs-exporter/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Status: Beta](https://img.shields.io/badge/Status-Beta-orange)
+
 Export iCloud Drive folders as NFS shares on macOS — transparently handling on-demand file hydration so NFS clients never see a missing or stub file.
+
+> **Beta:** Core architecture is implemented and tested (62 tests across Swift, Rust, and Python). The FUSE passthrough driver requires [macFUSE](https://osxfuse.github.io/) which is not yet integrated. NFS export configuration works but the end-to-end pipeline (iCloud file -> FUSE mount -> NFS share) is not yet operational.
 
 ## What it does
 
@@ -109,6 +116,32 @@ icne diagnose
 | fuse-driver | Rust | FUSE passthrough filesystem with hydration interception |
 | icne | Python | CLI for setup, configuration, and diagnostics |
 
+## Troubleshooting
+
+**"iCloud NFS Exporter is damaged and cannot be opened"**
+The app is not code-signed. Clear the quarantine flag:
+```bash
+xattr -cr "/Applications/iCloud NFS Exporter.app"
+```
+
+**Settings window doesn't appear on first launch**
+Click the cloud icon in the menu bar, then click "Settings..." or press Cmd+,.
+
+**`icne` command not found**
+Install the CLI from the app bundle:
+```bash
+/Applications/iCloud\ NFS\ Exporter.app/Contents/MacOS/install-cli
+```
+
+**Daemon shows "Stopped"**
+The hydration daemon is not yet started. It will be functional once the FUSE driver integration is complete. You can verify the system with `icne diagnose`.
+
+**NFS exports not applying**
+Writing to `/etc/exports` requires root. Run:
+```bash
+sudo icne exports
+```
+
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, patterns, and references.
@@ -119,9 +152,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, patterns, and refere
 make build       # Debug build
 make test        # Run all tests (Swift + Rust + Python)
 make lint        # Lint all languages
+make help        # Show all available targets
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## License
 
