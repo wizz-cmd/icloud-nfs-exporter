@@ -3,11 +3,11 @@
 [![CI](https://github.com/wizz-cmd/icloud-nfs-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/wizz-cmd/icloud-nfs-exporter/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/wizz-cmd/icloud-nfs-exporter)](https://github.com/wizz-cmd/icloud-nfs-exporter/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Status: Beta](https://img.shields.io/badge/Status-Beta-orange)
+![Status: Experimental](https://img.shields.io/badge/Status-Experimental-red)
 
 Export iCloud Drive folders as NFS shares on macOS — transparently handling on-demand file hydration so NFS clients never see a missing or stub file.
 
-> **Beta:** Core architecture is implemented and tested (62 tests across Swift, Rust, and Python). The FUSE passthrough driver requires [macFUSE](https://osxfuse.github.io/) which is not yet integrated. NFS export configuration works but the end-to-end pipeline (iCloud file -> FUSE mount -> NFS share) is not yet operational.
+> **Experimental / pre-alpha.** This project is in very early development. The architecture is scaffolded and individual components are implemented with tests, but the end-to-end pipeline (iCloud file -> FUSE mount -> NFS share) is **not yet functional**. The FUSE passthrough driver requires [macFUSE](https://osxfuse.github.io/) which is not yet integrated. Do not use this for production data. Expect breaking changes between releases.
 
 ## What it does
 
