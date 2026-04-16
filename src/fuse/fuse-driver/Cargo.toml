@@ -5,3 +5,7 @@ edition = "2021"
 
 [dependencies]
 fuse-core = { path = "../fuse-core" }
+fuser = { version = "0.17", features = ["macfuse-4-compat"] }
+log = "0.4"
+env_logger = "0.11"
+libc = "0.2"

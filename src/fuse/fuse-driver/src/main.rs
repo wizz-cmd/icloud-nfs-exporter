@@ -1,4 +1,7 @@
+mod passthrough;
+
 use std::env;
+use std::path::PathBuf;
 use std::process;
 
 use fuse_core::IpcClient;
@@ -24,6 +27,50 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
         .unwrap_or(DEFAULT_SOCKET);
+
+    // Subcommand: mount <source> [mountpoint]
+    if let Some(pos) = args.iter().position(|a| a == "mount") {
+        let source = args.get(pos + 1).unwrap_or_else(|| {
+            eprintln!("mount requires a source directory path");
+            process::exit(1);
+        });
+        let mountpoint = args
+            .get(pos + 2)
+            .map(|s| s.as_str())
+            .unwrap_or("/Volumes/icloud-nfs-exporter");
+
+        let source_path = PathBuf::from(source);
+        if !source_path.is_dir() {
+            eprintln!("source is not a directory: {source}");
+            process::exit(1);
+        }
+
+        if let Err(e) = std::fs::create_dir_all(mountpoint) {
+            eprintln!("failed to create mountpoint {mountpoint}: {e}");
+            process::exit(1);
+        }
+
+        env_logger::init();
+
+        let ipc = IpcClient::new(socket_path);
+        let fs = passthrough::IcloudFs::new(source_path, ipc);
+
+        let mut config = fuser::Config::default();
+        config.mount_options = vec![
+            fuser::MountOption::RO,
+            fuser::MountOption::FSName("icloud-nfs-exporter".to_string()),
+            fuser::MountOption::DefaultPermissions,
+            fuser::MountOption::CUSTOM("backend=fskit".to_string()),
+        ];
+
+        println!("Mounting {source} at {mountpoint}");
+        println!("Unmount with: umount {mountpoint}");
+        if let Err(e) = fuser::mount2(fs, mountpoint, &config) {
+            eprintln!("mount failed: {e}");
+            process::exit(1);
+        }
+        return;
+    }
 
     // Subcommand: ping
     if args.iter().any(|a| a == "ping") {
@@ -77,9 +124,6 @@ fn main() {
     // No subcommand — print status
     println!("icloud-nfs-exporter FUSE driver v{}", fuse_core::VERSION);
     println!();
-    println!("FUSE mount not yet available (requires macFUSE).");
-    println!("Use subcommands to interact with the hydration daemon:");
-    println!();
     print_usage();
 }
 
@@ -89,13 +133,18 @@ fn print_usage() {
 Usage: fuse-driver [options] <command>
 
 Commands:
-  ping               Check if the hydration daemon is running
-  query <path>       Query the hydration state of a file
-  hydrate <path>     Request hydration of an evicted file
+  mount <source> [mountpoint]  Mount iCloud folder as FUSE filesystem
+                               (default mountpoint: /Volumes/icloud-nfs-exporter)
+  ping                         Check if the hydration daemon is running
+  query <path>                 Query the hydration state of a file
+  hydrate <path>               Request hydration of an evicted file
 
 Options:
   -s, --socket <path>  IPC socket path (default: {DEFAULT_SOCKET})
   -v, --version        Print version and exit
-  -h, --help           Print this help and exit"
+  -h, --help           Print this help and exit
+
+Environment:
+  RUST_LOG=debug       Enable debug logging (e.g. hydration events)"
     );
 }

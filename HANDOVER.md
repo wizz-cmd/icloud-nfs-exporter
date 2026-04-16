@@ -1,7 +1,7 @@
 # Session Handover Document
 
 > **Read this first at the start of every new session.**
-> Last updated: 2026-04-16 (commit `1255256`)
+> Last updated: 2026-04-16
 
 ---
 
@@ -11,25 +11,26 @@
 
 ### What Works
 - **Hydration daemon** (Swift) — FileState machine, FSEvents watcher, IPC server over Unix socket. Compiles and tests pass (17 tests).
-- **FUSE driver core** (Rust) — IPC client, protocol types (cross-compat with Swift daemon), .icloud stub path utils. 21 tests pass.
+- **FUSE driver** (Rust) — IPC client, protocol types, .icloud stub path utils, **passthrough filesystem** (`fuser::Filesystem` impl with inode table, stub translation in readdir, hydration interception in open). 27 tests pass.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports, list. 24 tests pass.
 - **Menu bar app** (Swift/SwiftUI) — `@main App` with `MenuBarExtra`, `Settings` TabView (4 tabs), `@Observable AppState`, VoiceOver labels. Compiles clean.
-- **CI** — GitHub Actions on macOS 15, runs all 62 tests on every push.
+- **CI** — GitHub Actions on macOS 15, runs all tests on every push.
 - **Distribution** — `.dmg` built by release workflow on tag push, Homebrew formula, Makefile install/uninstall.
 
 ### What Does NOT Work Yet
-- **End-to-end pipeline is not functional.** No FUSE mount exists → NFS has nothing to export → files can't be served.
-- **macFUSE** — user is installing it now (`brew install --cask macfuse`). Reboot required. After reboot, verify with `ls /Library/Filesystems/macfuse.fs`.
-- **Rust toolchain** — not installed on dev machine. All Rust builds verified in CI only.
+- **End-to-end pipeline not yet tested.** FUSE passthrough is implemented but needs manual testing: mount → ls → open evicted file → verify hydration.
+- **macFUSE kext** — v5.1.3 installed. Kext not approved (approval prompt doesn't appear on macOS 15.7). **Using FSKit backend instead** (`-o backend=fskit`), which runs in user space and needs no kext. Limitation: mounts must be under `/Volumes`.
+- **NFS export** — not yet wired to the FUSE mount.
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).
 
 ### Immediate Next Step
-**Implement the `fuser::Filesystem` passthrough in `src/fuse/fuse-driver/`.** This is the critical missing piece:
-1. Verify macFUSE is installed and Rust is available
-2. Add `fuser` crate dependency to `src/fuse/fuse-driver/Cargo.toml`
-3. Implement passthrough filesystem: inode table, lookup, getattr, readdir (translating .icloud stubs), open (triggering hydration via IPC), read, release
-4. Wire into `main.rs` as a CLI that mounts FUSE at a given path
-5. Test end-to-end: mount over iCloud Drive → open evicted file → file hydrates → content served
+**Test the FUSE mount end-to-end.** The passthrough filesystem is implemented. Next:
+1. Build: `cargo build` in `src/fuse/`
+2. Start the hydration daemon
+3. Mount: `./target/debug/fuse-driver mount ~/Library/Mobile\ Documents/com~apple~CloudDocs /Volumes/icloud-nfs-exporter`
+4. Verify: `ls /Volumes/icloud-nfs-exporter` shows files with stubs translated to real names
+5. Test hydration: `cat /Volumes/icloud-nfs-exporter/<evicted-file>` should trigger download via IPC
+6. Wire NFS export to the FUSE mountpoint
 
 ### Architecture (Key Files)
 
@@ -41,7 +42,7 @@ src/hydration/                    # Swift (SPM), macOS 14+
 
 src/fuse/                         # Rust (Cargo workspace)
 ├── fuse-core/src/                # Library: IPC client/protocol, path_utils
-└── fuse-driver/src/              # Binary: CLI tool (FUSE mount TODO)
+└── fuse-driver/src/              # Binary: CLI + FUSE mount (passthrough.rs)
 
 src/app/                          # Swift (SPM), macOS 14+
 └── Sources/MenuBarApp/           # @main App, AppState, StatusPanel, Settings tabs
@@ -79,9 +80,9 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 ### Dev Environment
 - macOS 15 (Darwin 24.6.0), Intel (x86_64)
 - Swift 6.2.3 (Xcode CLI tools only — no full Xcode, so `swift test` fails locally for XCTest)
-- Rust: not installed locally, CI-only
+- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 27 tests pass locally (21 fuse-core + 6 passthrough).
 - Python 3.14
-- macFUSE: installing (pending reboot)
+- macFUSE: 5.1.3 installed, using FSKit backend (no kext). libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
 
 ### Design References
 - `docs/internal/research/macos-app-design-rules.md` — comprehensive HIG/SwiftUI/distribution guide
