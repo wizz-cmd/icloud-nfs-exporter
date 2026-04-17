@@ -11,8 +11,8 @@
 
 ### What Works
 - **Hydration daemon** (Swift) — FileState machine, FSEvents watcher, IPC server over Unix socket. Compiles and tests pass (17 tests).
-- **FUSE driver** (Rust) — IPC client, protocol types, .icloud stub path utils, **passthrough filesystem** (`fuser::Filesystem` impl with inode table, stub translation in readdir, hydration interception in open, symlink readlink). 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests).
-- **End-to-end FUSE mount verified** — kext backend works: root listing, subdirectory traversal, symlink following (Desktop/Documents → ~/), file content reads (verified with lynis.log, .DS_Store). macFUSE v5.2.0 kext.
+- **Direct NFSv3 server** (Rust, `nfsserve` crate) — replaces FUSE+nfsd approach. Implements `NFSFileSystem` trait with inode table, stub translation in readdir, hydration interception in read (via `spawn_blocking` IPC), symlink readlink. 9 tests pass. Reuses `fuse-core` for IPC client/protocol/path_utils.
+- **FUSE driver** (Rust, retained) — passthrough filesystem still works via macFUSE kext. 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests). No longer the primary NFS path.
 - **Hydration verified end-to-end** — two mechanisms work: (1) APFS dataless files auto-hydrate on `File::open()` (content served without persisting to disk — ideal for NFS), (2) `.icloud` stubs hydrated via IPC→daemon→`brctl download`. Orphaned stubs correctly return EIO.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports, list. 24 tests pass.
 - **Menu bar app** (Swift/SwiftUI) — `@main App` with `MenuBarExtra`, `Settings` TabView (4 tabs), `@Observable AppState`, VoiceOver labels. Compiles clean.
@@ -21,15 +21,16 @@
 
 ### What Does NOT Work Yet
 - **macFUSE FSKit backend** — Intel mini (dev machine): `fskitd` never starts, FSKit mount segfaults. Confirmed Intel-specific — tested on M2 MacBook (macOS 26.3.1) where `fskitd` runs fine (PID visible). M2 FSKit mount still failed due to module mismatch (fuse-t registered, not macFUSE). Kext works on Intel mini; kext on Apple Silicon requires recovery-mode boot. **Decision: use kext backend on Intel mini, defer FSKit until Apple Silicon becomes primary dev machine.** See `docs/internal/reports/e2e-fuse-mount-test.md` and `scripts/fskit-test.sh`.
-- **FUSE warnings**: `getxattr`, `listxattr`, `flush` not implemented — benign (macOS Finder probes).
-- **NFS export** — not yet wired to the FUSE mount.
+- **NFS server not yet tested end-to-end** — `nfs-server serve` builds and unit tests pass, but no live NFS mount test yet.
+- **Python CLI NFS integration** — `icne exports` still targets macOS `nfsd`; needs updating for the direct NFS server.
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).
 
 ### Immediate Next Step
-**Wire NFS export to the FUSE mount.** The FUSE passthrough is verified end-to-end with kext backend. Next:
-1. Choose NFS server approach (nfs-ganesha, unfs3, or kernel re-export)
-2. Export the FUSE mountpoint via NFS v3/v4
-3. Test from a Linux NFS client
+**Test the direct NFSv3 server end-to-end.** Build is clean, 9 unit tests pass. Next:
+1. Start hydration daemon + NFS server against iCloud Drive
+2. Mount via `mount_nfs` on localhost, verify directory listing and file reads
+3. Test from a Linux NFS client on the LAN
+4. Update Python CLI (`icne exports`, `icne diagnose`) for the direct NFS server
 
 ### Architecture (Key Files)
 
@@ -39,8 +40,11 @@ src/hydration/                    # Swift (SPM), macOS 14+
 ├── Sources/HydrationDaemon/      # Executable: CLI daemon with --watch/--socket
 └── Tests/HydrationTests/         # 17 XCTest tests
 
-src/fuse/                         # Rust (Cargo workspace)
-├── fuse-core/src/                # Library: IPC client/protocol, path_utils
+src/nfs/                          # Rust (Cargo workspace)
+└── nfs-server/src/               # Binary: direct NFSv3 server (icloud_nfs.rs)
+
+src/fuse/                         # Rust (Cargo workspace), retained
+├── fuse-core/src/                # Library: IPC client/protocol, path_utils (shared with nfs-server)
 └── fuse-driver/src/              # Binary: CLI + FUSE mount (passthrough.rs)
 
 src/app/                          # Swift (SPM), macOS 14+
@@ -79,7 +83,7 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 ### Dev Environment
 - macOS 15 (Darwin 24.6.0), Intel (x86_64)
 - Swift 6.2.3 (Xcode CLI tools only — no full Xcode, so `swift test` fails locally for XCTest)
-- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 43 tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests).
+- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 52 tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests + 9 nfs-server).
 - Python 3.14
 - macFUSE: 5.2.0 installed (Homebrew cask). Kext backend works (Intel mini). FSKit broken on this Intel Mac (`fskitd` never starts, mount segfaults). Verified FSKit infra works on M2/macOS 26 but mount needs module fix. Kext mount at `/Volumes` requires sudo; `/tmp` works without. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
 

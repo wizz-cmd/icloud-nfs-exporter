@@ -14,18 +14,21 @@ build: ## Debug build (Swift + Rust)
 	swift build --package-path src/app
 	swift build --package-path src/helper
 	cd src/fuse && cargo build
+	cd src/nfs && cargo build
 
 build-release: ## Optimised release build
 	swift build --package-path src/hydration -c release
 	swift build --package-path src/app -c release
 	swift build --package-path src/helper -c release
 	cd src/fuse && cargo build --release
+	cd src/nfs && cargo build --release
 
 # ── Test ──
 
 test: ## Run all tests (Swift + Rust + Python)
 	swift test --package-path src/hydration
 	cd src/fuse && cargo test
+	cd src/nfs && cargo test
 	python3 -m unittest discover -s tests -v
 
 # ── Lint ──
@@ -33,6 +36,7 @@ test: ## Run all tests (Swift + Rust + Python)
 lint: ## Lint all languages
 	swiftlint lint src/
 	cd src/fuse && cargo clippy -- -D warnings
+	cd src/nfs && cargo clippy -- -D warnings
 	ruff check scripts/
 
 # ── Install / Uninstall ──
@@ -42,6 +46,7 @@ install: build-release ## Build and install to PREFIX (/usr/local)
 	install -d $(SHARE_DIR)/scripts/icne_lib
 	install -d $(SHARE_DIR)/launchd
 	install -m 755 src/hydration/.build/release/HydrationDaemon $(PREFIX)/bin/
+	install -m 755 src/nfs/target/release/nfs-server $(PREFIX)/bin/icloud-nfs-server
 	install -m 755 src/app/.build/release/MenuBarApp $(PREFIX)/bin/icloud-nfs-exporter-app
 	install -m 755 scripts/icne $(SHARE_DIR)/scripts/icne
 	install -m 644 scripts/icne_lib/*.py $(SHARE_DIR)/scripts/icne_lib/
@@ -61,7 +66,9 @@ uninstall: ## Remove installed files
 docs: ## Generate API documentation (Swift DocC + Rust rustdoc)
 	swift package --package-path src/hydration generate-documentation --target HydrationCore 2>/dev/null || swift package --package-path src/hydration dump-symbol-graph 2>/dev/null || echo "DocC: run 'xcodebuild docbuild' for full DocC output"
 	cd src/fuse && cargo doc --no-deps --document-private-items
+	cd src/nfs && cargo doc --no-deps --document-private-items
 	@echo "Rust docs: src/fuse/target/doc/fuse_core/index.html"
+	@echo "Rust docs: src/nfs/target/doc/nfs_server/index.html"
 
 # ── Clean ──
 
@@ -70,3 +77,4 @@ clean: ## Remove build artifacts
 	swift package --package-path src/app clean
 	swift package --package-path src/helper clean
 	cd src/fuse && cargo clean
+	cd src/nfs && cargo clean

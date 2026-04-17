@@ -1,0 +1,17 @@
+[package]
+name = "nfs-server"
+version = "0.2.0"
+edition = "2021"
+
+[[bin]]
+name = "nfs-server"
+path = "src/main.rs"
+
+[dependencies]
+fuse-core = { path = "../../fuse/fuse-core" }
+nfsserve = "0.11"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+async-trait = "0.1"
+log = "0.4"
+env_logger = "0.11"
+libc = "0.2"
