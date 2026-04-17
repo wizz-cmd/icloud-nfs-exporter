@@ -20,7 +20,7 @@
 - **Distribution** — `.dmg` built by release workflow on tag push, Homebrew formula, Makefile install/uninstall.
 
 ### What Does NOT Work Yet
-- **macFUSE FSKit backend** — upgraded to 5.2.0, module registered correctly (`pluginkit +`, version `1.6`), enabled in System Settings. Post-reboot verification (2026-04-17): `fskitd` still not running, FSKit mount starts but produces no actual mount (process runs, no entry in `mount` output, mountpoint stays empty). Kext backend continues to work fine. FSKit remains non-functional on this system. See `docs/internal/reports/e2e-fuse-mount-test.md`.
+- **macFUSE FSKit backend** — Intel mini (dev machine): `fskitd` never starts, FSKit mount segfaults. Confirmed Intel-specific — tested on M2 MacBook (macOS 26.3.1) where `fskitd` runs fine (PID visible). M2 FSKit mount still failed due to module mismatch (fuse-t registered, not macFUSE). Kext works on Intel mini; kext on Apple Silicon requires recovery-mode boot. **Decision: use kext backend on Intel mini, defer FSKit until Apple Silicon becomes primary dev machine.** See `docs/internal/reports/e2e-fuse-mount-test.md` and `scripts/fskit-test.sh`.
 - **FUSE warnings**: `getxattr`, `listxattr`, `flush` not implemented — benign (macOS Finder probes).
 - **NFS export** — not yet wired to the FUSE mount.
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).
@@ -81,7 +81,7 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 - Swift 6.2.3 (Xcode CLI tools only — no full Xcode, so `swift test` fails locally for XCTest)
 - Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 43 tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests).
 - Python 3.14
-- macFUSE: 5.2.0 installed (Homebrew cask). Kext backend works. FSKit module registered (`pluginkit +`, v1.6), enabled in System Settings. Post-reboot: `fskitd` still not running, FSKit mount silently fails (process runs but no mount appears). Kext is the only working backend. Kext mount at `/Volumes` requires sudo; `/tmp` works without. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
+- macFUSE: 5.2.0 installed (Homebrew cask). Kext backend works (Intel mini). FSKit broken on this Intel Mac (`fskitd` never starts, mount segfaults). Verified FSKit infra works on M2/macOS 26 but mount needs module fix. Kext mount at `/Volumes` requires sudo; `/tmp` works without. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
 
 ### Design References
 - `docs/internal/research/macos-app-design-rules.md` — comprehensive HIG/SwiftUI/distribution guide
