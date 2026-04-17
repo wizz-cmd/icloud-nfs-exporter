@@ -518,9 +518,9 @@ impl Filesystem for IcloudFs {
                     stat.f_bavail,
                     stat.f_files,
                     stat.f_ffree,
-                    stat.f_bsize as u32,
+                    stat.f_bsize,
                     255, // namelen
-                    stat.f_bsize as u32, // frsize
+                    stat.f_bsize, // frsize
                 );
             } else {
                 reply.error(Errno::EIO);

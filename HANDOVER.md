@@ -14,7 +14,7 @@
 - **Direct NFSv3 server** (Rust, `nfsserve` crate) — replaces FUSE+nfsd approach. Implements `NFSFileSystem` trait with inode table, stub translation in readdir, hydration interception in read (via `spawn_blocking` IPC), symlink readlink. 9 tests pass. Reuses `fuse-core` for IPC client/protocol/path_utils.
 - **FUSE driver** (Rust, retained) — passthrough filesystem still works via macFUSE kext. 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests). No longer the primary NFS path.
 - **Hydration verified end-to-end** — two mechanisms work: (1) APFS dataless files auto-hydrate on `File::open()` (content served without persisting to disk — ideal for NFS), (2) `.icloud` stubs hydrated via IPC→daemon→`brctl download`. Orphaned stubs correctly return EIO.
-- **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports, list. 24 tests pass.
+- **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports (start/stop NFS server), list. 28 tests pass.
 - **Menu bar app** (Swift/SwiftUI) — `@main App` with `MenuBarExtra`, `Settings` TabView (4 tabs), `@Observable AppState`, VoiceOver labels. Compiles clean.
 - **CI** — GitHub Actions on macOS 15, runs all tests on every push.
 - **Distribution** — `.dmg` built by release workflow on tag push, Homebrew formula, Makefile install/uninstall.
@@ -83,7 +83,7 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 ### Dev Environment
 - macOS 15 (Darwin 24.6.0), Intel (x86_64)
 - Swift 6.2.3 (Xcode CLI tools only — no full Xcode, so `swift test` fails locally for XCTest)
-- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 52 tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests + 9 nfs-server).
+- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 52 Rust tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests + 9 nfs-server). Clippy clean on both workspaces.
 - Python 3.14
 - macFUSE: 5.2.0 installed (Homebrew cask). Kext backend works (Intel mini). FSKit broken on this Intel Mac (`fskitd` never starts, mount segfaults). Verified FSKit infra works on M2/macOS 26 but mount needs module fix. Kext mount at `/Volumes` requires sudo; `/tmp` works without. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
 

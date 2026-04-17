@@ -18,10 +18,12 @@ const ROOT_ID: fileid3 = 1;
 
 struct InodeData {
     real_path: PathBuf,
+    #[allow(dead_code)]
     kind: ftype3,
 }
 
 pub struct IcloudNfs {
+    #[allow(dead_code)]
     source: PathBuf,
     socket_path: String,
     inodes: RwLock<HashMap<fileid3, InodeData>>,
@@ -131,8 +133,8 @@ fn meta_to_fattr3(ino: fileid3, meta: &std::fs::Metadata, uid: u32, gid: u32) ->
         nlink,
         uid,
         gid,
-        size: meta.len() as u64,
-        used: meta.blocks() as u64 * 512,
+        size: meta.len(),
+        used: meta.blocks() * 512,
         rdev: specdata3 {
             specdata1: 0,
             specdata2: 0,
