@@ -93,4 +93,8 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 - `ARCHITECTURE.md` — design patterns (Proxy, Lazy Init, State Machine, Facade, Strategy)
 
 ### Completed Roadmap
-M0 Scaffold → M1 Hydration Daemon → M2 FUSE Core → M3 NFS Wiring → M4 Menu Bar App → M5 Setup Wizard → M6 Distribution → M7 Polish → v0.2 SwiftUI Migration → API Documentation
+M0 Scaffold → M1 Hydration Daemon → M2 FUSE Core → M3 NFS Wiring → M4 Menu Bar App → M5 Setup Wizard → M6 Distribution → M7 Polish → v0.2 SwiftUI Migration → API Documentation → Direct NFSv3 Server (read-only)
+
+### Future Roadmap
+- **Read-write NFS** — implement write-back through iCloud: `write()`/`create()`/`mkdir()`/`rename()`/`remove()` in NFS server → upload via iCloud APIs. Requires: iCloud upload mechanism in hydration daemon, conflict resolution with iCloud sync, file locking strategy.
+- **FSKit migration** — revisit when macFUSE ships macOS 26-compatible FSKit module (for local FUSE mount without kext, if needed alongside NFS)
