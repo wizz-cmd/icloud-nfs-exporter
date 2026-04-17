@@ -12,7 +12,7 @@
 ### What Works
 - **Hydration daemon** (Swift) — FileState machine, FSEvents watcher, IPC server over Unix socket. Compiles and tests pass (17 tests).
 - **FUSE driver** (Rust) — IPC client, protocol types, .icloud stub path utils, **passthrough filesystem** (`fuser::Filesystem` impl with inode table, stub translation in readdir, hydration interception in open, symlink readlink). 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests).
-- **End-to-end FUSE mount verified** — kext backend works: root listing, subdirectory traversal, symlink following (Desktop/Documents → ~/), file content reads (verified with lynis.log, .DS_Store). macFUSE v5.1.3 kext.
+- **End-to-end FUSE mount verified** — kext backend works: root listing, subdirectory traversal, symlink following (Desktop/Documents → ~/), file content reads (verified with lynis.log, .DS_Store). macFUSE v5.2.0 kext.
 - **Hydration verified end-to-end** — two mechanisms work: (1) APFS dataless files auto-hydrate on `File::open()` (content served without persisting to disk — ideal for NFS), (2) `.icloud` stubs hydrated via IPC→daemon→`brctl download`. Orphaned stubs correctly return EIO.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports, list. 24 tests pass.
 - **Menu bar app** (Swift/SwiftUI) — `@main App` with `MenuBarExtra`, `Settings` TabView (4 tabs), `@Observable AppState`, VoiceOver labels. Compiles clean.
@@ -20,7 +20,7 @@
 - **Distribution** — `.dmg` built by release workflow on tag push, Homebrew formula, Makefile install/uninstall.
 
 ### What Does NOT Work Yet
-- **macFUSE FSKit backend** — module registration corrupted by `pluginkit -e use` (version shows `(null)` instead of `(1.5)`). Known bug: [macfuse/macfuse#1132](https://github.com/macfuse/macfuse/issues/1132). Fix: upgrade to macFUSE 5.2.0 (released 2026-04-09) or re-register via `sudo macfuse install --force` + `sudo killall fskitd`. Kext backend works as fallback. See `docs/internal/reports/e2e-fuse-mount-test.md` for full analysis.
+- **macFUSE FSKit backend** — upgraded to 5.2.0, module registered correctly (`pluginkit +`, version `1.6`), enabled in System Settings. Post-reboot verification (2026-04-17): `fskitd` still not running, FSKit mount starts but produces no actual mount (process runs, no entry in `mount` output, mountpoint stays empty). Kext backend continues to work fine. FSKit remains non-functional on this system. See `docs/internal/reports/e2e-fuse-mount-test.md`.
 - **FUSE warnings**: `getxattr`, `listxattr`, `flush` not implemented — benign (macOS Finder probes).
 - **NFS export** — not yet wired to the FUSE mount.
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).
@@ -81,7 +81,7 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 - Swift 6.2.3 (Xcode CLI tools only — no full Xcode, so `swift test` fails locally for XCTest)
 - Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 43 tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests).
 - Python 3.14
-- macFUSE: 5.1.3 installed. Kext backend works. FSKit module registered + enabled (`pluginkit +`) but runtime reports "disabled" — needs investigation. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
+- macFUSE: 5.2.0 installed (Homebrew cask). Kext backend works. FSKit module registered (`pluginkit +`, v1.6), enabled in System Settings. Post-reboot: `fskitd` still not running, FSKit mount silently fails (process runs but no mount appears). Kext is the only working backend. Kext mount at `/Volumes` requires sudo; `/tmp` works without. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
 
 ### Design References
 - `docs/internal/research/macos-app-design-rules.md` — comprehensive HIG/SwiftUI/distribution guide
