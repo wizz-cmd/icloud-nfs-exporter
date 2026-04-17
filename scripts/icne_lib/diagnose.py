@@ -107,18 +107,20 @@ def check_macfuse() -> Check:
     return Check("macFUSE", False, "not installed — https://osxfuse.github.io/")
 
 
-def check_nfsd() -> Check:
-    """Check whether nfsd is running and report active exports.
+def check_nfs_server() -> Check:
+    """Check whether the direct NFS server is running.
 
     Returns:
-        A ``Check`` that passes when ``nfsd status`` reports the
-        daemon as active.
+        A ``Check`` that passes when the ``nfs-server`` process is
+        found, including the PID in the detail.
     """
-    if nfs.nfsd_is_running():
-        exports = nfs.show_exports()
-        n = max(0, len(exports) - 1)  # first line is header
-        return Check("NFS server (nfsd)", True, f"{n} export(s)")
-    return Check("NFS server (nfsd)", False, "not running")
+    pid = nfs.nfs_server_pid()
+    if pid is not None:
+        return Check("NFS server", True, f"running (PID {pid})")
+    binary = nfs.nfs_server_binary()
+    if binary is None:
+        return Check("NFS server", False, "binary not found — run 'cd src/nfs && cargo build'")
+    return Check("NFS server", False, f"not running (binary at {binary})")
 
 
 def check_mount_base() -> Check:
@@ -162,8 +164,7 @@ def run_all() -> list[Check]:
         check_icloud_drive(),
         check_config(),
         check_daemon(),
-        check_macfuse(),
-        check_nfsd(),
+        check_nfs_server(),
         check_mount_base(),
         check_rust_toolchain(),
     ]

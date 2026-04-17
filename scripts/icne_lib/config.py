@@ -24,7 +24,8 @@ def default_config() -> dict[str, object]:
             "mount_base": DEFAULT_MOUNT_BASE,
         },
         "nfs": {
-            "server": "nfsd",
+            "server": "direct",
+            "port": 11111,
             "allowed_network": "192.168.0.0/24",
         },
         "folders": [],
@@ -66,7 +67,8 @@ def save_config(config: dict[str, object]) -> None:
         # [nfs]
         f.write("[nfs]\n")
         nfs = config.get("nfs", {})
-        f.write(f'server = "{nfs.get("server", "nfsd")}"\n')
+        f.write(f'server = "{nfs.get("server", "direct")}"\n')
+        f.write(f'port = {nfs.get("port", 11111)}\n')
         f.write(f'allowed_network = "{nfs.get("allowed_network", "192.168.0.0/24")}"\n')
         f.write("\n")
 

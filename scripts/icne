@@ -34,38 +34,17 @@ def cmd_add_folder(args):
         sys.exit(1)
 
     source = str(cfg.Path(args.path).expanduser().resolve())
-    mount = cfg.mount_point_for(source, conf)
-    os.makedirs(mount, exist_ok=True)
+    port = conf.get("nfs", {}).get("port", nfs.DEFAULT_PORT)
 
     print(f"Added folder:")
     print(f"  Source:  {source}")
-    print(f"  Mount:   {mount}")
     print(f"  Label:   {args.label or cfg.Path(source).name}")
 
-    # Generate NFS export entry
-    network = conf.get("nfs", {}).get("allowed_network", "192.168.0.0/24")
-    entry = nfs.generate_exports_entry(str(mount), network)
-    print(f"\nNFS export line (for /etc/exports):")
-    print(f"  {entry}")
-
-    if args.apply_nfs:
-        entries = []
-        for folder in conf.get("folders", []):
-            mp = cfg.mount_point_for(folder["source"], conf)
-            entries.append(nfs.generate_exports_entry(str(mp), network))
-        new_exports = nfs.update_exports(entries)
-        print(f"\nUpdating /etc/exports (requires sudo)...")
-        try:
-            nfs.apply_exports(new_exports)
-            print("NFS exports updated and nfsd reloaded.")
-        except PermissionError:
-            print("Permission denied — run with sudo or use:", file=sys.stderr)
-            print(f"  sudo sh -c 'cat > /etc/exports' << 'EOF'", file=sys.stderr)
-            print(new_exports, file=sys.stderr)
-            print("EOF", file=sys.stderr)
-            print("  sudo nfsd update", file=sys.stderr)
-    else:
-        print("\nTo apply NFS exports, re-run with --apply-nfs or manually edit /etc/exports.")
+    cmds = nfs.mount_command(port=port)
+    print(f"\nTo serve via NFS:  icne exports")
+    print(f"Then mount with:")
+    print(f"  Linux:  {cmds['linux']}")
+    print(f"  macOS:  {cmds['macos']}")
 
 
 def cmd_remove_folder(args):
@@ -105,27 +84,64 @@ def cmd_diagnose(_args):
 
 
 def cmd_exports(args):
-    """Show or update NFS exports."""
+    """Start, stop, or show status of the NFS server."""
     conf = cfg.load_config()
     folders = conf.get("folders", [])
-    network = conf.get("nfs", {}).get("allowed_network", "192.168.0.0/24")
+    port = conf.get("nfs", {}).get("port", nfs.DEFAULT_PORT)
+    socket_path = conf.get("general", {}).get("socket_path", cfg.DEFAULT_SOCKET)
 
-    entries = []
-    for folder in folders:
-        mp = cfg.mount_point_for(folder["source"], conf)
-        entries.append(nfs.generate_exports_entry(str(mp), network))
+    if args.stop:
+        if nfs.stop_nfs_server():
+            print("NFS server stopped.")
+        else:
+            print("NFS server is not running.")
+        return
 
-    if args.dry_run:
-        print("Generated /etc/exports content:\n")
-        print(nfs.update_exports(entries))
-    else:
-        new_content = nfs.update_exports(entries)
-        try:
-            nfs.apply_exports(new_content)
-            print(f"Updated /etc/exports with {len(entries)} export(s) and reloaded nfsd.")
-        except PermissionError:
-            print("Permission denied. Run with sudo.", file=sys.stderr)
-            sys.exit(1)
+    if args.status:
+        pid = nfs.nfs_server_pid()
+        if pid:
+            print(f"NFS server running (PID {pid}, port {port})")
+            cmds = nfs.mount_command(port=port)
+            print(f"\nMount with:")
+            print(f"  Linux:  {cmds['linux']}")
+            print(f"  macOS:  {cmds['macos']}")
+        else:
+            print("NFS server is not running.")
+        return
+
+    if not folders:
+        print("No folders configured. Run: icne add-folder <path>", file=sys.stderr)
+        sys.exit(1)
+
+    # Use the first folder as the source directory
+    source = folders[0]["source"]
+
+    if nfs.nfs_server_is_running():
+        print(f"NFS server already running (PID {nfs.nfs_server_pid()}).")
+        cmds = nfs.mount_command(port=port)
+        print(f"\nMount with:")
+        print(f"  Linux:  {cmds['linux']}")
+        print(f"  macOS:  {cmds['macos']}")
+        return
+
+    binary = nfs.nfs_server_binary()
+    if binary is None:
+        print("Error: nfs-server binary not found. Build with:", file=sys.stderr)
+        print("  cd src/nfs && cargo build", file=sys.stderr)
+        sys.exit(1)
+
+    proc = nfs.start_nfs_server(source, port=port, socket_path=socket_path)
+    if proc is None:
+        print("Error: failed to start NFS server.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"NFS server started (PID {proc.pid}, port {port})")
+    print(f"Serving: {source}")
+    cmds = nfs.mount_command(port=port)
+    print(f"\nMount with:")
+    print(f"  Linux:  {cmds['linux']}")
+    print(f"  macOS:  {cmds['macos']}")
+    print(f"\nStop with: icne exports --stop")
 
 
 def main():
@@ -148,8 +164,6 @@ def main():
     p_add = sub.add_parser("add-folder", help="Add an iCloud folder to export")
     p_add.add_argument("path", help="Path to iCloud folder")
     p_add.add_argument("--label", help="Human-readable label")
-    p_add.add_argument("--apply-nfs", action="store_true",
-                       help="Update /etc/exports and reload nfsd (requires root)")
 
     # remove-folder
     p_rm = sub.add_parser("remove-folder", help="Remove a folder from exports")
@@ -162,9 +176,11 @@ def main():
     sub.add_parser("diagnose", help="Run diagnostic checks")
 
     # exports
-    p_exp = sub.add_parser("exports", help="Show or apply NFS exports")
-    p_exp.add_argument("--dry-run", action="store_true",
-                       help="Print generated exports without applying")
+    p_exp = sub.add_parser("exports", help="Start/stop the NFS server")
+    p_exp.add_argument("--stop", action="store_true",
+                       help="Stop the NFS server")
+    p_exp.add_argument("--status", action="store_true",
+                       help="Show NFS server status and mount commands")
 
     args = parser.parse_args()
     if args.command is None:

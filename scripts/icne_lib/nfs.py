@@ -1,12 +1,120 @@
-"""NFS export management for macOS nfsd."""
+"""NFS export management — direct NFS server and legacy macOS nfsd."""
 
 import ipaddress
+import os
+import shutil
+import signal
 import subprocess
 from pathlib import Path
 
 EXPORTS_FILE = Path("/etc/exports")
 MARKER_BEGIN = "# BEGIN icloud-nfs-exporter"
 MARKER_END = "# END icloud-nfs-exporter"
+DEFAULT_PORT = 11111
+
+
+# ── Direct NFS server (nfs-server binary) ──
+
+
+def nfs_server_binary() -> str | None:
+    """Find the nfs-server binary.
+
+    Search in order: $PATH, then the project build directories
+    (release, then debug).
+
+    Returns:
+        Absolute path to the binary, or ``None`` if not found.
+    """
+    found = shutil.which("icloud-nfs-server") or shutil.which("nfs-server")
+    if found:
+        return found
+    # Check project build dirs relative to this file
+    project = Path(__file__).resolve().parent.parent.parent
+    for profile in ("release", "debug"):
+        p = project / "src" / "nfs" / "target" / profile / "nfs-server"
+        if p.is_file() and os.access(p, os.X_OK):
+            return str(p)
+    return None
+
+
+def nfs_server_pid() -> int | None:
+    """Return the PID of a running nfs-server process, or ``None``."""
+    r = subprocess.run(
+        ["pgrep", "-f", "nfs-server serve"],
+        capture_output=True, text=True,
+    )
+    if r.returncode == 0 and r.stdout.strip():
+        return int(r.stdout.strip().splitlines()[0])
+    return None
+
+
+def nfs_server_is_running() -> bool:
+    """Check whether the direct NFS server is running."""
+    return nfs_server_pid() is not None
+
+
+def start_nfs_server(
+    source: str,
+    port: int = DEFAULT_PORT,
+    socket_path: str = "/tmp/icloud-nfs-exporter.sock",
+) -> subprocess.Popen | None:
+    """Start the direct NFS server in the background.
+
+    Args:
+        source: Absolute path to the iCloud source directory.
+        port: TCP port to listen on.
+        socket_path: Hydration daemon IPC socket path.
+
+    Returns:
+        The ``Popen`` object, or ``None`` if the binary was not found.
+    """
+    binary = nfs_server_binary()
+    if binary is None:
+        return None
+    return subprocess.Popen(
+        [binary, "serve", source, "--port", str(port), "--socket", socket_path],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def stop_nfs_server() -> bool:
+    """Stop the running NFS server.
+
+    Returns:
+        ``True`` if a process was found and signalled, ``False`` otherwise.
+    """
+    pid = nfs_server_pid()
+    if pid is None:
+        return False
+    os.kill(pid, signal.SIGTERM)
+    return True
+
+
+def mount_command(host: str = "HOST", port: int = DEFAULT_PORT) -> dict[str, str]:
+    """Return NFS mount commands for Linux and macOS clients.
+
+    Args:
+        host: Hostname or IP address of the NFS server.
+        port: TCP port the server listens on.
+
+    Returns:
+        A dict with ``linux`` and ``macos`` keys containing the mount
+        command strings.
+    """
+    return {
+        "linux": (
+            f"sudo mount.nfs -o vers=3,tcp,port={port},"
+            f"mountport={port},nolock {host}:/ /mnt"
+        ),
+        "macos": (
+            f"mount_nfs -o vers=3,tcp,port={port},"
+            f"mountport={port},nolocks {host}:/ /mnt"
+        ),
+    }
+
+
+# ── Legacy: macOS nfsd + /etc/exports ──
 
 
 def cidr_to_network_mask(cidr: str) -> tuple[str, str]:

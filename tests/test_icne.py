@@ -33,6 +33,8 @@ class TestConfig(unittest.TestCase):
         self.assertIn("nfs", c)
         self.assertIn("folders", c)
         self.assertEqual(c["folders"], [])
+        self.assertEqual(c["nfs"]["server"], "direct")
+        self.assertEqual(c["nfs"]["port"], 11111)
 
     def test_save_and_load(self):
         with patch.object(config, "CONFIG_DIR", self.config_dir), \
@@ -138,6 +140,34 @@ class TestNfs(unittest.TestCase):
         with patch.object(nfs, "read_exports", return_value=""):
             result = nfs.update_exports([])
         self.assertNotIn("BEGIN", result)
+
+
+class TestNfsDirect(unittest.TestCase):
+    """Tests for the direct NFS server management functions."""
+
+    def test_mount_command(self):
+        cmds = nfs.mount_command(host="192.168.1.10", port=11111)
+        self.assertIn("192.168.1.10", cmds["linux"])
+        self.assertIn("11111", cmds["linux"])
+        self.assertIn("vers=3", cmds["linux"])
+        self.assertIn("192.168.1.10", cmds["macos"])
+        self.assertIn("nolocks", cmds["macos"])
+
+    def test_mount_command_custom_port(self):
+        cmds = nfs.mount_command(port=2049)
+        self.assertIn("2049", cmds["linux"])
+        self.assertIn("2049", cmds["macos"])
+
+    def test_nfs_server_binary_returns_string_or_none(self):
+        result = nfs.nfs_server_binary()
+        # Should be either a string path or None
+        self.assertTrue(result is None or isinstance(result, str))
+
+    def test_nfs_server_pid_no_server(self):
+        # When no server is running, should return None
+        # (may or may not be running in test env, so just check type)
+        result = nfs.nfs_server_pid()
+        self.assertTrue(result is None or isinstance(result, int))
 
 
 class TestIpc(unittest.TestCase):
