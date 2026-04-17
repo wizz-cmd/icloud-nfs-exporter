@@ -11,7 +11,7 @@
 
 ### What Works
 - **Hydration daemon** (Swift) — FileState machine, FSEvents watcher, IPC server over Unix socket. Compiles and tests pass (17 tests).
-- **Direct NFSv3 server** (Rust, `nfsserve` crate) — replaces FUSE+nfsd approach. Implements `NFSFileSystem` trait with inode table, stub translation in readdir, hydration interception in read (via `spawn_blocking` IPC), symlink readlink. 9 tests pass. Reuses `fuse-core` for IPC client/protocol/path_utils.
+- **Direct NFSv3 server** (Rust, `nfsserve` crate) — replaces FUSE+nfsd approach. Implements `NFSFileSystem` trait with inode table, stub translation in readdir, hydration interception in read (via `spawn_blocking` IPC), symlink readlink. 9 tests pass. Reuses `fuse-core` for IPC client/protocol/path_utils. **Verified cross-machine**: M2 MacBook (macOS 26.3.1) successfully mounted iCloud Drive from Intel mini over LAN (NFSv3, port 11111).
 - **FUSE driver** (Rust, retained) — passthrough filesystem still works via macFUSE kext. 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests). No longer the primary NFS path.
 - **Hydration verified end-to-end** — two mechanisms work: (1) APFS dataless files auto-hydrate on `File::open()` (content served without persisting to disk — ideal for NFS), (2) `.icloud` stubs hydrated via IPC→daemon→`brctl download`. Orphaned stubs correctly return EIO.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports (start/stop NFS server), list. 28 tests pass.
@@ -21,16 +21,15 @@
 
 ### What Does NOT Work Yet
 - **macFUSE FSKit backend** — Intel mini (dev machine): `fskitd` never starts, FSKit mount segfaults. Confirmed Intel-specific — tested on M2 MacBook (macOS 26.3.1) where `fskitd` runs fine (PID visible). M2 FSKit mount still failed due to module mismatch (fuse-t registered, not macFUSE). Kext works on Intel mini; kext on Apple Silicon requires recovery-mode boot. **Decision: use kext backend on Intel mini, defer FSKit until Apple Silicon becomes primary dev machine.** See `docs/internal/reports/e2e-fuse-mount-test.md` and `scripts/fskit-test.sh`.
-- **NFS server not yet tested end-to-end** — `nfs-server serve` builds and unit tests pass, but no live NFS mount test yet.
-- **Python CLI NFS integration** — `icne exports` still targets macOS `nfsd`; needs updating for the direct NFS server.
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).
 
 ### Immediate Next Step
-**Test the direct NFSv3 server end-to-end.** Build is clean, 9 unit tests pass. Next:
-1. Start hydration daemon + NFS server against iCloud Drive
-2. Mount via `mount_nfs` on localhost, verify directory listing and file reads
-3. Test from a Linux NFS client on the LAN
-4. Update Python CLI (`icne exports`, `icne diagnose`) for the direct NFS server
+**Test from a Linux NFS client.** macOS-to-macOS verified. Next:
+1. ~~Start hydration daemon + NFS server against iCloud Drive~~ — done
+2. ~~Mount via `mount_nfs` on localhost~~ — done (Intel mini)
+3. ~~Mount from M2 MacBook over LAN~~ — done (192.168.21.130:11111)
+4. Test from a Linux NFS client on the LAN
+5. Stress test: large files, many concurrent reads, long-running mount
 
 ### Architecture (Key Files)
 
