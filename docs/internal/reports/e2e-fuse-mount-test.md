@@ -2,7 +2,8 @@
 
 **Feature:** First live FUSE mount of iCloud Drive with passthrough filesystem
 **Date:** 2026-04-17
-**Test environment:** macOS 15 (Darwin 24.6.0), Intel x86_64, macFUSE 5.1.3
+**Test environment:** macOS 15.7.4 (Darwin 24.6.0), Intel x86_64, macFUSE 5.2.0
+**Cross-test environment:** macOS 26.3.1, Apple M2 arm64, macFUSE 5.2.0
 
 ---
 
@@ -168,43 +169,72 @@ Both are the kind of issue that only appears with real filesystem interactions �
 
 ## FSKit investigation
 
-### Problem
+### Timeline
 
-`fuse-driver mount --fskit` fails with:
+#### Phase 1 — Initial test (2026-04-17, macFUSE 5.1.3)
+
+`fuse-driver mount --fskit` failed with:
 ```
 Module io.macfuse.app.fsmodule.macfuse-local is disabled!
 mount: Unable to invoke task
 ```
 
-This occurs even though `pluginkit -mA` shows the module as enabled (`+` prefix).
+This occurred even though `pluginkit -mA` showed the module as enabled (`+` prefix). Root cause: the `pluginkit -e use -i` command corrupted the registration metadata — the version changed from `(1.5)` to `(null)`. Documented in [macfuse/macfuse#1132](https://github.com/macfuse/macfuse/issues/1132).
 
-### Root cause
+#### Phase 2 — macFUSE 5.2.0 upgrade (2026-04-17)
 
-The macFUSE mount helper checks FSKit's own enablement API (`FSModuleIdentity.isEnabled`), not PluginKit. These two subsystems can disagree about whether an extension is enabled.
+Upgraded to macFUSE 5.2.0 (released 2026-04-09, includes workaround for the PluginKit corruption bug). After upgrade:
+- `pluginkit -mA` showed `+ io.macfuse.app.fsmodule.macfuse-local(1.6)` — version restored
+- Module enabled in System Settings > Privacy & Security
+- FSKit mount still failed: "File system extension not enabled"
+- Hypothesis: `fskitd` needs reboot to pick up the re-registered module
 
-The `pluginkit -e use -i` command that was run to enable the module corrupted the registration metadata — the version changed from `(1.5)` to `(null)`. This is documented in [macfuse/macfuse#1132](https://github.com/macfuse/macfuse/issues/1132): re-registering an already-registered extension via `pluginkit` corrupts the metadata and causes FSKit's internal enablement check to fail.
+#### Phase 3 — Post-reboot verification (2026-04-17, Intel mini)
 
-### Key findings
+After full system reboot:
+- `pluginkit -mA`: `+ io.macfuse.app.fsmodule.macfuse-local(1.6)` — still registered
+- `pgrep fskitd`: **not running** — `fskitd` never started, no launchd entry found
+- FSKit mount: process starts, prints "Mounting..." banner, but **no mount entry** appears in `mount` output, mountpoint stays empty
+- Kext fallback: works perfectly as before
 
-- **Not an Intel limitation** — FSKit works on both architectures
-- **No SIP changes needed** — FSKit is entirely user-space
-- **No Xcode or entitlements needed** — the macFUSE installer handles everything
-- **The `(null)` version is the smoking gun** — indicates corrupted PluginKit registration
-- **macFUSE 5.2.0** (released 2026-04-09) includes a specific fix: "workaround for an FSKit/PluginKit issue that could prevent macFUSE volumes from being mounted after re-registering an already registered file system extension"
+Key finding: `fskitd` doesn't run on this Intel Mac even after a clean reboot. The FSKit subsystem appears non-functional at the OS level.
 
-### Recommended fix
+#### Phase 4 — Cross-machine test (2026-04-17, M2 MacBook, macOS 26.3.1)
 
-**Option A — Upgrade to macFUSE 5.2.0** (recommended). It directly addresses this exact bug.
+Created `scripts/fskit-test.sh` — a self-contained diagnostic that compiles a minimal C FUSE hello-world, tests FSKit mount, falls back to kext. Ran it on a second machine:
 
-**Option B — Workaround on 5.1.3:**
-1. Re-register via macFUSE's own installer: `sudo /Library/Filesystems/macfuse.fs/Contents/Resources/macfuse.app/Contents/MacOS/macfuse install --force`
-2. Kill stale FSKit daemon: `sudo killall fskitd`
-3. Verify in System Settings → General → Login Items & Extensions → File System Extensions
-4. Retry mount
+| Check | Intel mini (macOS 15.7.4) | M2 MacBook (macOS 26.3.1) |
+|-------|---------------------------|---------------------------|
+| macOS >= 15.4 | PASS | PASS |
+| macFUSE 5.2.0 | PASS | PASS |
+| PluginKit registration | `+ io.macfuse.app.fsmodule.macfuse-local(1.6)` | `org.fuset.fskit-srv.module(0.1.3)` (fuse-t, not macFUSE) |
+| `fskitd` running | **FAIL** — never starts | **PASS** — PID 19467 |
+| FSKit mount | **FAIL** — segfault (SIGSEGV) | **FAIL** — segfault (SIGSEGV) |
+| Kext fallback | **PASS** | **FAIL** — needs recovery-mode boot to enable kernel extensions on Apple Silicon |
 
-### Priority
+M2 findings:
+- **`fskitd` runs fine on Apple Silicon / macOS 26** — confirming the Intel mini issue is specific to that system
+- macFUSE's FSKit module (`io.macfuse.app.fsmodule.macfuse-local`) **fails to register silently** on macOS 26 — `sudo pluginkit -v -a` succeeds without error but the module never appears in `pluginkit -mA`. Tried both `.appex` bundles found at `/Library/Filesystems/macfuse.fs/Contents/Resources/macfuse.app/Contents/Extensions/`:
+  - `io.macfuse.app.fsmodule.macfuse-local.appex` — no effect
+  - `io.macfuse.app.fsmodule.macfuse.appex` — no effect
+- **Root cause:** macFUSE 5.2.0's FSKit module was built for macOS 15.4's FSKit API. macOS 26 (Tahoe) likely changed the FSKit API, making the module incompatible. The module registers on macOS 15 but not on macOS 26.
+- fuse-t has a working module on macOS 26 (`org.fuset.fskit-srv.module(0.1.3)`) but it's disabled (no `+` prefix). Enabling it in System Settings and recompiling against fuse-t's libfuse would be a separate effort.
 
-Low. The kext backend works, and the FSKit advantage (no kext approval) is moot since the kext was already approved. FSKit's only remaining benefit is forward-compatibility — Apple may deprecate kext support in future macOS versions. Upgrading to macFUSE 5.2.0 is the right path but not blocking.
+### Summary of FSKit blockers
+
+| Machine | macOS | Arch | Blocker |
+|---------|-------|------|---------|
+| Intel mini (dev) | 15.7.4 | x86_64 | `fskitd` never starts, FSKit mount segfaults |
+| M2 MacBook | 26.3.1 | arm64 | macFUSE FSKit module won't register on macOS 26, kext needs recovery boot |
+
+### Decision
+
+**Use kext backend on the Intel mini (dev machine). Defer FSKit until:**
+1. macFUSE releases a version with macOS 26-compatible FSKit module, OR
+2. Development moves to an Apple Silicon Mac where kext can be enabled via recovery boot, OR
+3. fuse-t becomes a viable alternative (would require recompiling fuse-driver against fuse-t's libfuse)
+
+FSKit's only advantage over kext is forward-compatibility — Apple will eventually deprecate kexts. But today, kext is the only backend that works reliably.
 
 ## Files changed this session
 
@@ -222,7 +252,7 @@ Two open questions can now be answered:
 
 ## Next steps
 
-1. **Test hydration**: manually evict a file (`brctl evict <path>`), then access it through the FUSE mount to verify the full hydration pipeline
-2. **Upgrade macFUSE to 5.2.0** to resolve the FSKit issue
-3. **Wire NFS export** to the FUSE mountpoint (M3)
+1. ~~**Test hydration**~~ — Done. Both APFS dataless and `.icloud` stubs verified end-to-end.
+2. ~~**Upgrade macFUSE to 5.2.0**~~ — Done. FSKit still non-functional (Intel: fskitd broken; M2: module incompatible with macOS 26). See FSKit investigation above.
+3. **Wire NFS export** to the FUSE mountpoint (M3) — **next up**, using kext backend
 4. **Implement `getxattr`/`listxattr`** to suppress the benign warnings (optional)
