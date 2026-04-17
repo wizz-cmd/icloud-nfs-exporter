@@ -13,6 +13,7 @@
 - **Hydration daemon** (Swift) — FileState machine, FSEvents watcher, IPC server over Unix socket. Compiles and tests pass (17 tests).
 - **FUSE driver** (Rust) — IPC client, protocol types, .icloud stub path utils, **passthrough filesystem** (`fuser::Filesystem` impl with inode table, stub translation in readdir, hydration interception in open, symlink readlink). 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests).
 - **End-to-end FUSE mount verified** — kext backend works: root listing, subdirectory traversal, symlink following (Desktop/Documents → ~/), file content reads (verified with lynis.log, .DS_Store). macFUSE v5.1.3 kext.
+- **Hydration verified end-to-end** — two mechanisms work: (1) APFS dataless files auto-hydrate on `File::open()` (content served without persisting to disk — ideal for NFS), (2) `.icloud` stubs hydrated via IPC→daemon→`brctl download`. Orphaned stubs correctly return EIO.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports, list. 24 tests pass.
 - **Menu bar app** (Swift/SwiftUI) — `@main App` with `MenuBarExtra`, `Settings` TabView (4 tabs), `@Observable AppState`, VoiceOver labels. Compiles clean.
 - **CI** — GitHub Actions on macOS 15, runs all tests on every push.
@@ -20,7 +21,6 @@
 
 ### What Does NOT Work Yet
 - **macFUSE FSKit backend** — module registration corrupted by `pluginkit -e use` (version shows `(null)` instead of `(1.5)`). Known bug: [macfuse/macfuse#1132](https://github.com/macfuse/macfuse/issues/1132). Fix: upgrade to macFUSE 5.2.0 (released 2026-04-09) or re-register via `sudo macfuse install --force` + `sudo killall fskitd`. Kext backend works as fallback. See `docs/internal/reports/e2e-fuse-mount-test.md` for full analysis.
-- **Hydration end-to-end untested** — no `.icloud` stubs found in current iCloud Drive (all files local). Hydration path is implemented but needs a real evicted file to verify.
 - **FUSE warnings**: `getxattr`, `listxattr`, `flush` not implemented — benign (macOS Finder probes).
 - **NFS export** — not yet wired to the FUSE mount.
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).

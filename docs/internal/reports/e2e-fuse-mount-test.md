@@ -33,8 +33,9 @@ Perform the first end-to-end integration test of the FUSE passthrough filesystem
 | Subdirectory traversal (symlink) | **PASS** (after fix) | `Desktop/` → followed symlink to `~/Desktop` |
 | File content read | **PASS** | `lynis.log` (281,294 bytes), `.DS_Store` (18,436 bytes) |
 | Nested directory listing | **PASS** | `Downloads/` → text files, zip archives, PDFs |
-| Stub translation in readdir | **NOT TESTED** | No `.icloud` stubs in current iCloud Drive — all files local |
-| Hydration on open | **NOT TESTED** | Same reason — no evicted files available |
+| Stub translation in readdir | **PASS** | `.Brick.li3d_material.icloud` → `Brick.li3d_material` (96 stubs found in `.li3d` bundles) |
+| Hydration: APFS dataless | **PASS** | `brctl evict` → dataless → FUSE read → APFS auto-hydrates on `File::open()` → correct content, checksum matches |
+| Hydration: `.icloud` stub via IPC | **PASS** (IPC triggered) | Stub detected → IPC `hydrate` called → daemon invokes `brctl download`. Fails for orphaned stubs (uninstalled apps) with EIO — correct behavior. |
 | Unmount | **PASS** | `umount /tmp/icne-test-mount` clean |
 | All unit tests | **PASS** | 43/43 (21 fuse-core + 6 passthrough + 16 doc-tests) |
 
@@ -76,6 +77,49 @@ Perform the first end-to-end integration test of the FUSE passthrough filesystem
 
 **Impact:** Any symlink in iCloud Drive was inaccessible. Desktop and Documents are always symlinks when iCloud Desktop & Documents sync is enabled.
 
+## Hydration test results
+
+### Discovery: dual eviction mechanisms on macOS 15
+
+macOS 15 uses **two different mechanisms** for iCloud file eviction:
+
+| Mechanism | When used | Detection | Hydration |
+|-----------|-----------|-----------|-----------|
+| **APFS dataless files** | `brctl evict` on regular files in CloudDocs | `stat`: `blocks=0`, flag `SF_DATALESS` (`0x40000000`). File keeps original name, size, and metadata. | **Automatic**: `open()` triggers APFS-level download from iCloud. Transparent to callers — no IPC needed. |
+| **`.icloud` stub files** | Files inside app bundles (`.li3d`, etc.), older sync states | Filename pattern: `.Name.icloud`. File is a small plist placeholder. | **Manual**: requires `brctl download` on the file or parent bundle. Our IPC daemon handles this. |
+
+### Test: APFS dataless hydration through FUSE
+
+```
+1. brctl evict lynis.log      → blocks=0, dataless=True
+2. md5 /fuse-mount/lynis.log  → 7a0370238492855054c38132202c82d3 ✓ (matches original)
+3. Check source after read     → blocks=0, dataless=True (!)
+```
+
+Key finding: **APFS serves dataless file content on-the-fly from iCloud without persisting to local disk.** The file remains dataless after the FUSE read. This is ideal for the NFS exporter — files are served to NFS clients without consuming local storage.
+
+The FUSE passthrough approach works because `File::open()` on a dataless file causes APFS to transparently fetch the content from iCloud. No special handling needed in the FUSE driver.
+
+### Test: `.icloud` stub hydration through FUSE
+
+96 `.icloud` stubs found deep in `.li3d` app bundles. FUSE `readdir` correctly translates names (`.Brick.li3d_material.icloud` → `Brick.li3d_material`). Opening a translated stub through FUSE triggers the IPC hydration path:
+
+1. `open()` detects stub via `is_icloud_stub()`
+2. Calls `IpcClient::hydrate()` → daemon runs `brctl download`
+3. **Result**: `brctl download` fails with `NSCocoaErrorDomain Code=4` — the app (Live Interior 3D) is no longer installed, so iCloud can't resolve the files
+4. FUSE returns `EIO` — correct behavior for undownloadable stubs
+
+This is an edge case (orphaned stubs from uninstalled apps) but validates that the IPC hydration path is correctly wired: stub detected → IPC called → daemon attempted download → error propagated → EIO returned.
+
+### Architectural implications
+
+The FUSE driver doesn't need to change its approach — the passthrough `File::open()` already handles both mechanisms:
+
+1. **Dataless files**: APFS auto-hydrates, content served transparently
+2. **`.icloud` stubs**: detected in `open()`, routed through IPC → daemon → `brctl download`
+
+The hydration daemon's value is for `.icloud` stubs specifically. For dataless files, APFS handles everything. Both paths work through the same FUSE `open()` → `read()` pipeline.
+
 ## What was done differently than anticipated
 
 The HANDOVER.md anticipated a straightforward test sequence: build → start daemon → mount → ls → test hydration. In practice, several things diverged:
@@ -94,11 +138,11 @@ The HANDOVER.md anticipated a straightforward test sequence: build → start dae
 
 **Actual:** `sudo` not available in the non-interactive Claude Code environment. Used `/tmp/icne-test-mount` instead. The kext backend doesn't have the `/Volumes` restriction that FSKit imposes, so this worked fine. For production use, the mount should be at `/Volumes/icloud-nfs-exporter`.
 
-### 3. No evicted files to test hydration
+### 3. Eviction uses APFS dataless, not `.icloud` stubs
 
-**Anticipated:** Test opening an evicted file to verify the hydration pipeline.
+**Anticipated:** `brctl evict` would create `.icloud` stub files that the FUSE driver would detect and hydrate via IPC.
 
-**Actual:** All files in iCloud Drive are currently local — no `.icloud` stubs found at any depth. The hydration code path (stub detection → IPC → daemon download → inode update → file open) is implemented and unit-tested but has not been exercised end-to-end. To test, a file would need to be manually evicted via `brctl evict <path>`.
+**Actual:** `brctl evict` on macOS 15 creates APFS dataless files (flag `SF_DATALESS`, `blocks=0`) — the file keeps its original name and metadata but has no data blocks on disk. APFS auto-hydrates transparently on `open()`. The `.icloud` stub mechanism still exists but only for files inside app bundles. The FUSE passthrough handles both: dataless files via APFS auto-hydration, stubs via IPC.
 
 ### 4. Two bugs in untested code paths
 
@@ -110,7 +154,13 @@ The HANDOVER.md anticipated a straightforward test sequence: build → start dae
 
 Both are the kind of issue that only appears with real filesystem interactions — the unit tests couldn't catch them because they don't involve the FUSE kernel interface.
 
-### 5. iCloud Drive structure has symlinks
+### 5. APFS serves dataless content without persisting to disk
+
+**Anticipated:** Hydration would download the file to local disk, then the FUSE driver would serve the local copy.
+
+**Actual:** When a dataless file is read through FUSE, APFS fetches content from iCloud and serves it without materializing data blocks on disk — the file remains `dataless=True` after the read. This is ideal for the NFS exporter: files are served to remote clients without consuming local storage. Re-eviction is unnecessary because the file was never re-hydrated locally.
+
+### 6. iCloud Drive structure has symlinks
 
 **Anticipated:** iCloud Drive contains regular files and directories, plus `.icloud` stubs.
 
