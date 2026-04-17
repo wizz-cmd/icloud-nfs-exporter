@@ -16,7 +16,7 @@
 - **Hydration verified end-to-end** — two mechanisms work: (1) APFS dataless files auto-hydrate on `File::open()` (content served without persisting to disk — ideal for NFS), (2) `.icloud` stubs hydrated via IPC→daemon→`brctl download`. Orphaned stubs correctly return EIO.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports (start/stop NFS server), list. 28 tests pass.
 - **Menu bar app** (Swift/SwiftUI) — `@main App` with `MenuBarExtra`, `Settings` TabView (4 tabs), `@Observable AppState`, VoiceOver labels. Compiles clean.
-- **CI** — GitHub Actions on macOS 15, runs all tests on every push.
+- **CI** — GitHub Actions on macOS 15: builds Swift + Rust (FUSE + NFS), runs all tests, clippy lint. macFUSE installed via brew.
 - **Distribution** — `.dmg` built by release workflow on tag push, Homebrew formula, Makefile install/uninstall.
 
 ### What Does NOT Work Yet
