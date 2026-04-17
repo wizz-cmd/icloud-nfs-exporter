@@ -88,8 +88,6 @@ def run(*, force: bool = False, non_interactive: bool = False) -> None:
 
     checks = [
         diagnose.check_icloud_drive(),
-        diagnose.check_macfuse(),
-        diagnose.check_nfsd(),
         diagnose.check_rust_toolchain(),
     ]
     for c in checks:
@@ -207,33 +205,66 @@ def run(*, force: bool = False, non_interactive: bool = False) -> None:
     print(f"  Mount base: {mount_base}")
     print(f"  Folders: {len(config['folders'])} configured")
 
-    # ── Step 5: LaunchAgent ──
+    # ── Step 5: LaunchAgents ──
     _step(5, "LaunchAgent installation")
 
-    plist_src = (
-        Path(__file__).resolve().parent.parent.parent
-        / "launchd"
-        / "com.wizz-cmd.icloud-nfs-exporter.plist.template"
-    )
-    plist_dst = Path.home() / "Library" / "LaunchAgents" / \
-        "com.wizz-cmd.icloud-nfs-exporter.plist"
+    launchd_dir = Path(__file__).resolve().parent.parent.parent / "launchd"
+    agents_dir = Path.home() / "Library" / "LaunchAgents"
+    username = os.environ.get("USER", "")
 
-    if plist_dst.exists() and not force:
-        print(f"  LaunchAgent already installed: {plist_dst}")
-    elif plist_src.exists():
-        install_agent = non_interactive or _ask_yn(
-            "Install LaunchAgent (auto-start daemon at login)?"
-        )
-        if install_agent:
-            content = plist_src.read_text()
-            content = content.replace("__USERNAME__", os.environ.get("USER", ""))
-            plist_dst.parent.mkdir(parents=True, exist_ok=True)
-            plist_dst.write_text(content)
-            print(f"  Installed: {plist_dst}")
-        else:
-            print("  Skipped.")
-    else:
-        print(f"  Template not found: {plist_src}")
+    # Determine source and port from config for the NFS server plist
+    source_dir = ""
+    if config.get("folders"):
+        source_dir = config["folders"][0]["source"]
+    port = str(config.get("nfs", {}).get("port", 11111))
+    socket_path = config.get("general", {}).get(
+        "socket_path", cfg.DEFAULT_SOCKET
+    )
+
+    agents = [
+        {
+            "name": "Hydration daemon",
+            "template": "com.wizz-cmd.icloud-nfs-exporter.plist.template",
+            "plist": "com.wizz-cmd.icloud-nfs-exporter.plist",
+            "replacements": {"__USERNAME__": username},
+        },
+        {
+            "name": "NFS server",
+            "template": "com.wizz-cmd.icloud-nfs-server.plist.template",
+            "plist": "com.wizz-cmd.icloud-nfs-server.plist",
+            "replacements": {
+                "__USERNAME__": username,
+                "__SOURCE__": source_dir,
+                "__PORT__": port,
+                "__SOCKET__": socket_path,
+            },
+        },
+    ]
+
+    install_agents = non_interactive or _ask_yn(
+        "Install LaunchAgents (auto-start at login)?"
+    )
+
+    for agent in agents:
+        src = launchd_dir / agent["template"]
+        dst = agents_dir / agent["plist"]
+
+        if dst.exists() and not force:
+            print(f"  {agent['name']}: already installed")
+            continue
+        if not src.exists():
+            print(f"  {agent['name']}: template not found ({src})")
+            continue
+        if not install_agents:
+            print(f"  {agent['name']}: skipped")
+            continue
+
+        content = src.read_text()
+        for placeholder, value in agent["replacements"].items():
+            content = content.replace(placeholder, value)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(content)
+        print(f"  {agent['name']}: installed ({dst})")
 
     # ── Summary ──
     _header("Setup complete!")
@@ -248,9 +279,7 @@ def run(*, force: bool = False, non_interactive: bool = False) -> None:
     if missing:
         print("\n  Recommended next steps:")
         for c in missing:
-            if "macFUSE" in c.name:
-                print("    - Install macFUSE: https://osxfuse.github.io/")
-            elif "Rust" in c.name:
+            if "Rust" in c.name:
                 print("    - Install Rust:    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh")
         print("    - Run diagnostics: icne diagnose")
     else:

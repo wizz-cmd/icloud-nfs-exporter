@@ -15,8 +15,32 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
-        run: make build
+      - name: Install macFUSE
+        run: brew install --cask macfuse
 
-      - name: Test
-        run: make test
+      - name: Build Swift
+        run: |
+          swift build --package-path src/hydration
+          swift build --package-path src/app
+          swift build --package-path src/helper
+
+      - name: Build Rust (FUSE + NFS)
+        run: |
+          cd src/fuse && cargo build
+          cd ../nfs && cargo build
+
+      - name: Test Swift
+        run: swift test --package-path src/hydration
+
+      - name: Test Rust
+        run: |
+          cd src/fuse && cargo test
+          cd ../nfs && cargo test
+
+      - name: Test Python
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Clippy
+        run: |
+          cd src/fuse && cargo clippy -- -D warnings
+          cd ../nfs && cargo clippy -- -D warnings

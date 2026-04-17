@@ -67,6 +67,13 @@ fi
 cp "$ROOT/src/app/.build/release/MenuBarApp" "$CONTENTS/MacOS/"
 cp "$ROOT/src/hydration/.build/release/HydrationDaemon" "$CONTENTS/MacOS/"
 
+# NFS server (Rust)
+if [ -f "$ROOT/src/nfs/target/release/nfs-server" ]; then
+    cp "$ROOT/src/nfs/target/release/nfs-server" "$CONTENTS/MacOS/icloud-nfs-server"
+elif [ -f "$BUILD/icloud-nfs-server" ]; then
+    cp "$BUILD/icloud-nfs-server" "$CONTENTS/MacOS/"
+fi
+
 # ── CLI + resources ──
 
 cp "$ROOT/scripts/icne" "$CONTENTS/Resources/scripts/"

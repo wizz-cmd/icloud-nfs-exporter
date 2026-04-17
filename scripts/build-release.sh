@@ -54,9 +54,26 @@ if command -v cargo &>/dev/null; then
         cp "target/release/fuse-driver" "$OUT/" 2>/dev/null || true
         echo "  -> fuse-driver (native)"
     fi
+    echo "Building src/nfs (Rust)..."
+    cd "$ROOT/src/nfs"
+
+    if rustup target list --installed 2>/dev/null | grep -q aarch64-apple-darwin && \
+       rustup target list --installed 2>/dev/null | grep -q x86_64-apple-darwin; then
+        cargo build --release --target aarch64-apple-darwin 2>&1 | tail -1
+        cargo build --release --target x86_64-apple-darwin 2>&1 | tail -1
+        lipo -create \
+            "target/aarch64-apple-darwin/release/nfs-server" \
+            "target/x86_64-apple-darwin/release/nfs-server" \
+            -output "$OUT/icloud-nfs-server"
+        echo "  -> icloud-nfs-server (universal)"
+    else
+        cargo build --release 2>&1 | tail -1
+        cp "target/release/nfs-server" "$OUT/icloud-nfs-server" 2>/dev/null || true
+        echo "  -> icloud-nfs-server (native)"
+    fi
     cd "$ROOT"
 else
-    echo "Rust not installed — skipping fuse-driver."
+    echo "Rust not installed — skipping Rust components."
 fi
 
 # ── Python CLI ──

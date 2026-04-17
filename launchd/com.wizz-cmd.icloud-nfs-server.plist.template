@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wizz-cmd.icloud-nfs-server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/icloud-nfs-server</string>
+        <string>serve</string>
+        <string>__SOURCE__</string>
+        <string>--port</string>
+        <string>__PORT__</string>
+        <string>--socket</string>
+        <string>__SOCKET__</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/__USERNAME__/Library/Logs/icloud-nfs-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/__USERNAME__/Library/Logs/icloud-nfs-server.err</string>
+    <key>WorkingDirectory</key>
+    <string>/Users/__USERNAME__</string>
+</dict>
+</plist>
