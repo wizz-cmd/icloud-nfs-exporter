@@ -161,6 +161,8 @@ impl Filesystem for IcloudFs {
 
         let kind = if meta.is_dir() {
             FileType::Directory
+        } else if meta.is_symlink() {
+            FileType::Symlink
         } else {
             FileType::RegularFile
         };
@@ -474,6 +476,28 @@ impl Filesystem for IcloudFs {
     ) {
         self.handles.write().unwrap().remove(&fh.0);
         reply.ok();
+    }
+
+    fn readlink(&self, _req: &Request, ino: INodeNo, reply: ReplyData) {
+        let real_path = {
+            let inodes = self.inodes.read().unwrap();
+            match inodes.get(&ino.0) {
+                Some(data) => data.real_path.clone(),
+                None => {
+                    reply.error(Errno::ENOENT);
+                    return;
+                }
+            }
+        };
+
+        match fs::read_link(&real_path) {
+            Ok(target) => {
+                reply.data(target.as_os_str().as_encoded_bytes());
+            }
+            Err(e) => {
+                reply.error(Errno::from(e));
+            }
+        }
     }
 
     fn statfs(&self, _req: &Request, _ino: INodeNo, reply: ReplyStatfs) {

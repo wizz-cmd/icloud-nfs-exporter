@@ -28,14 +28,22 @@ fn main() {
         .map(|s| s.as_str())
         .unwrap_or(DEFAULT_SOCKET);
 
-    // Subcommand: mount <source> [mountpoint]
+    // Subcommand: mount [--fskit] <source> [mountpoint]
     if let Some(pos) = args.iter().position(|a| a == "mount") {
-        let source = args.get(pos + 1).unwrap_or_else(|| {
+        let use_fskit = args.iter().any(|a| a == "--fskit");
+
+        // Collect positional args after "mount" (skip flags)
+        let mount_positionals: Vec<&String> = args[pos + 1..]
+            .iter()
+            .filter(|a| !a.starts_with('-'))
+            .collect();
+
+        let source = mount_positionals.first().unwrap_or_else(|| {
             eprintln!("mount requires a source directory path");
             process::exit(1);
         });
-        let mountpoint = args
-            .get(pos + 2)
+        let mountpoint = mount_positionals
+            .get(1)
             .map(|s| s.as_str())
             .unwrap_or("/Volumes/icloud-nfs-exporter");
 
@@ -60,8 +68,12 @@ fn main() {
             fuser::MountOption::RO,
             fuser::MountOption::FSName("icloud-nfs-exporter".to_string()),
             fuser::MountOption::DefaultPermissions,
-            fuser::MountOption::CUSTOM("backend=fskit".to_string()),
         ];
+        if use_fskit {
+            config.mount_options.push(
+                fuser::MountOption::CUSTOM("backend=fskit".to_string()),
+            );
+        }
 
         println!("Mounting {source} at {mountpoint}");
         println!("Unmount with: umount {mountpoint}");

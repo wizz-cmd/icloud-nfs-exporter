@@ -1,7 +1,7 @@
 # Session Handover Document
 
 > **Read this first at the start of every new session.**
-> Last updated: 2026-04-16
+> Last updated: 2026-04-17
 
 ---
 
@@ -11,26 +11,25 @@
 
 ### What Works
 - **Hydration daemon** (Swift) — FileState machine, FSEvents watcher, IPC server over Unix socket. Compiles and tests pass (17 tests).
-- **FUSE driver** (Rust) — IPC client, protocol types, .icloud stub path utils, **passthrough filesystem** (`fuser::Filesystem` impl with inode table, stub translation in readdir, hydration interception in open). 27 tests pass.
+- **FUSE driver** (Rust) — IPC client, protocol types, .icloud stub path utils, **passthrough filesystem** (`fuser::Filesystem` impl with inode table, stub translation in readdir, hydration interception in open, symlink readlink). 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests).
+- **End-to-end FUSE mount verified** — kext backend works: root listing, subdirectory traversal, symlink following (Desktop/Documents → ~/), file content reads (verified with lynis.log, .DS_Store). macFUSE v5.1.3 kext.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports, list. 24 tests pass.
 - **Menu bar app** (Swift/SwiftUI) — `@main App` with `MenuBarExtra`, `Settings` TabView (4 tabs), `@Observable AppState`, VoiceOver labels. Compiles clean.
 - **CI** — GitHub Actions on macOS 15, runs all tests on every push.
 - **Distribution** — `.dmg` built by release workflow on tag push, Homebrew formula, Makefile install/uninstall.
 
 ### What Does NOT Work Yet
-- **End-to-end pipeline not yet tested.** FUSE passthrough is implemented but needs manual testing: mount → ls → open evicted file → verify hydration.
-- **macFUSE kext** — v5.1.3 installed. Kext not approved (approval prompt doesn't appear on macOS 15.7). **Using FSKit backend instead** (`-o backend=fskit`), which runs in user space and needs no kext. Limitation: mounts must be under `/Volumes`.
+- **macFUSE FSKit backend** — module registration corrupted by `pluginkit -e use` (version shows `(null)` instead of `(1.5)`). Known bug: [macfuse/macfuse#1132](https://github.com/macfuse/macfuse/issues/1132). Fix: upgrade to macFUSE 5.2.0 (released 2026-04-09) or re-register via `sudo macfuse install --force` + `sudo killall fskitd`. Kext backend works as fallback. See `docs/internal/reports/e2e-fuse-mount-test.md` for full analysis.
+- **Hydration end-to-end untested** — no `.icloud` stubs found in current iCloud Drive (all files local). Hydration path is implemented but needs a real evicted file to verify.
+- **FUSE warnings**: `getxattr`, `listxattr`, `flush` not implemented — benign (macOS Finder probes).
 - **NFS export** — not yet wired to the FUSE mount.
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).
 
 ### Immediate Next Step
-**Test the FUSE mount end-to-end.** The passthrough filesystem is implemented. Next:
-1. Build: `cargo build` in `src/fuse/`
-2. Start the hydration daemon
-3. Mount: `./target/debug/fuse-driver mount ~/Library/Mobile\ Documents/com~apple~CloudDocs /Volumes/icloud-nfs-exporter`
-4. Verify: `ls /Volumes/icloud-nfs-exporter` shows files with stubs translated to real names
-5. Test hydration: `cat /Volumes/icloud-nfs-exporter/<evicted-file>` should trigger download via IPC
-6. Wire NFS export to the FUSE mountpoint
+**Wire NFS export to the FUSE mount.** The FUSE passthrough is verified end-to-end with kext backend. Next:
+1. Choose NFS server approach (nfs-ganesha, unfs3, or kernel re-export)
+2. Export the FUSE mountpoint via NFS v3/v4
+3. Test from a Linux NFS client
 
 ### Architecture (Key Files)
 
@@ -80,9 +79,9 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 ### Dev Environment
 - macOS 15 (Darwin 24.6.0), Intel (x86_64)
 - Swift 6.2.3 (Xcode CLI tools only — no full Xcode, so `swift test` fails locally for XCTest)
-- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 27 tests pass locally (21 fuse-core + 6 passthrough).
+- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 43 tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests).
 - Python 3.14
-- macFUSE: 5.1.3 installed, using FSKit backend (no kext). libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
+- macFUSE: 5.1.3 installed. Kext backend works. FSKit module registered + enabled (`pluginkit +`) but runtime reports "disabled" — needs investigation. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
 
 ### Design References
 - `docs/internal/research/macos-app-design-rules.md` — comprehensive HIG/SwiftUI/distribution guide

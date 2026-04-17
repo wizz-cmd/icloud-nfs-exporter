@@ -160,12 +160,12 @@ umount /Volumes/icloud-nfs-exporter
 ## Not implemented (intentional)
 
 - **Write support** — RO mount, write operations return `ENOSYS`/`EROFS`
-- **Symlink readlink** — returns `ENOSYS`
+- ~~**Symlink readlink** — returns `ENOSYS`~~ — **Implemented** in e2e test session (2026-04-17)
 - **Extended attributes** — not passed through
 - **NFS export wiring** — next step per HANDOVER.md
 
 ## Next steps
 
-1. Manual end-to-end test: mount, ls, open evicted file, verify hydration
+1. ~~Manual end-to-end test: mount, ls, open evicted file, verify hydration~~ — **Done** (see `e2e-fuse-mount-test.md`)
 2. Wire NFS export to the FUSE mountpoint
 3. Update CI to build with fuser dependency
