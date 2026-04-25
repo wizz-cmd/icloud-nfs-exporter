@@ -1,7 +1,7 @@
 # Session Handover Document
 
 > **Read this first at the start of every new session.**
-> Last updated: 2026-04-17
+> Last updated: 2026-04-25
 
 ---
 
@@ -52,9 +52,14 @@ src/app/                          # Swift (SPM), macOS 14+
 scripts/
 ├── icne                          # Python CLI entry point
 ├── icne_lib/                     # config, nfs, ipc, diagnose, icloud, wizard
-├── build-release.sh              # Universal binary builder
-├── create-app-bundle.sh          # .app bundle creator
-└── create-dmg.sh                 # .dmg disk image creator
+├── build-release.sh              # Universal binary builder (includes nfs-server)
+├── create-app-bundle.sh          # .app bundle creator (includes nfs-server)
+├── create-dmg.sh                 # .dmg disk image creator
+└── fskit-test.sh                 # Self-contained FSKit diagnostic
+
+launchd/
+├── com.wizz-cmd.icloud-nfs-exporter.plist.template  # HydrationDaemon LaunchAgent
+└── com.wizz-cmd.icloud-nfs-server.plist.template    # NFS server LaunchAgent
 ```
 
 ### IPC Protocol
@@ -70,6 +75,8 @@ TOML at `~/.config/icloud-nfs-exporter/config.toml`. Shared between Python CLI a
 socket_path = "/tmp/icloud-nfs-exporter.sock"
 mount_base = "/tmp/icne-mnt"
 [nfs]
+server = "direct"
+port = 11111
 allowed_network = "192.168.0.0/24"
 [[folders]]
 source = "/Users/chris/Library/Mobile Documents/com~apple~CloudDocs"
