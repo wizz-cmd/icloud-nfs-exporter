@@ -153,6 +153,24 @@ src/
 
 ---
 
+### 7. Write-Back Staging Layer (OverlayFS-inspired)
+
+**Pattern:** **Write-Behind / Write-Back Cache** with **OverlayFS Upper/Lower Layer** semantics
+**Description:** NFS write operations (write, create, mkdir, rename, remove, setattr) are buffered in a staging directory (`~/.icne-staging/`) that mirrors the iCloud source tree structure. Reads check staging first (upper layer), then fall through to iCloud (lower layer, with hydration). A background task promotes quiesced files to the real iCloud folder via atomic copy+rename, letting macOS's `bird` daemon handle the iCloud sync. When modifying an existing iCloud file, a "copy-up" occurs: the file is hydrated, copied to staging, then written to — identical to OverlayFS's copy-up mechanism.
+**Why:** Writing directly to `~/Library/Mobile Documents/` triggers immediate, incremental iCloud sync on every `write()` call, uploading partial files. The staging layer decouples write performance from iCloud sync latency and produces one clean sync event per file after writes quiesce.
+**Key design choices:**
+- **No whiteouts** — unlike OverlayFS, our lower layer (iCloud) is writable, so deletes go directly to iCloud.
+- **Directories are immediate** — `mkdir` creates in both staging and iCloud simultaneously (zero-cost to sync).
+- **Symlinks return NOTSUPP** — iCloud does not reliably preserve symlinks.
+- **Quiescence-based promotion** — files are promoted after N seconds (default 5) of no writes, avoiding half-written uploads.
+- **Crash recovery** — staging directory persists on disk; on restart, leftover staged files are promoted immediately.
+**References:**
+- OverlayFS (Linux kernel): https://docs.kernel.org/filesystems/overlayfs.html
+- FUSE write-back cache: https://docs.kernel.org/filesystems/fuse/fuse-io.html
+- Write-Behind pattern: https://hazelcast.com/glossary/write-behind/
+
+---
+
 ## Open Questions
 
 - [ ] Can a LaunchAgent (per-user) export NFS on privileged ports (<1024)? If not, use port 2049 mapped via `pf` or use `nfsd` which runs as root.
@@ -170,6 +188,7 @@ src/
 | 002 | Start with macOS nfsd, migrate to ganesha if needed | 2026-04-05 | Proposed |
 | 003 | ~~Python for initial implementation (pyfuse3)~~ → **Superseded by ADR 004** | 2026-04-05 | Superseded |
 | 004 | Swift for iCloud hydration daemon; Rust for FUSE driver | 2026-04-05 | Proposed |
+| 005 | Write-back via staging layer, not write-through to iCloud | 2026-04-25 | Accepted |
 
 ### ADR 004 — Swift + Rust language split
 

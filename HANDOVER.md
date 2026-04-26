@@ -1,7 +1,7 @@
 # Session Handover Document
 
 > **Read this first at the start of every new session.**
-> Last updated: 2026-04-25
+> Last updated: 2026-04-25 (read-write NFS staging layer)
 
 ---
 
@@ -11,7 +11,7 @@
 
 ### What Works
 - **Hydration daemon** (Swift) — FileState machine, FSEvents watcher, IPC server over Unix socket. Compiles and tests pass (17 tests).
-- **Direct NFSv3 server** (Rust, `nfsserve` crate) — replaces FUSE+nfsd approach. Implements `NFSFileSystem` trait with inode table, stub translation in readdir, hydration interception in read (via `spawn_blocking` IPC), symlink readlink. 9 tests pass. Reuses `fuse-core` for IPC client/protocol/path_utils. **Verified cross-machine**: M2 MacBook (macOS 26.3.1) successfully mounted iCloud Drive from Intel mini over LAN (NFSv3, port 11111).
+- **Direct NFSv3 server** (Rust, `nfsserve` crate) — **read-write** via OverlayFS-inspired staging layer. Implements full `NFSFileSystem` trait: inode table, stub translation, hydration interception, plus `write`/`create`/`mkdir`/`remove`/`rename`/`setattr`/`create_exclusive`. Writes land in `~/.icne-staging/`, background task promotes quiesced files to iCloud via atomic copy+rename. 22 NFS tests + 10 staging tests pass. Reuses `fuse-core` for IPC client/protocol/path_utils. **Verified cross-machine**: M2 MacBook (macOS 26.3.1) successfully mounted iCloud Drive from Intel mini over LAN (NFSv3, port 11111).
 - **FUSE driver** (Rust, retained) — passthrough filesystem still works via macFUSE kext. 43 tests pass (21 fuse-core + 6 passthrough + 16 doc-tests). No longer the primary NFS path.
 - **Hydration verified end-to-end** — two mechanisms work: (1) APFS dataless files auto-hydrate on `File::open()` (content served without persisting to disk — ideal for NFS), (2) `.icloud` stubs hydrated via IPC→daemon→`brctl download`. Orphaned stubs correctly return EIO.
 - **CLI tool** `icne` (Python) — setup wizard, add-folder, diagnose, exports (start/stop NFS server), list. 28 tests pass.
@@ -24,12 +24,14 @@
 - **Code signing** — app is unsigned, requires `xattr -cr` workaround. Needs Apple Developer account ($99/year).
 
 ### Immediate Next Step
-**Test from a Linux NFS client.** macOS-to-macOS verified. Next:
-1. ~~Start hydration daemon + NFS server against iCloud Drive~~ — done
-2. ~~Mount via `mount_nfs` on localhost~~ — done (Intel mini)
-3. ~~Mount from M2 MacBook over LAN~~ — done (192.168.21.130:11111)
-4. Test from a Linux NFS client on the LAN
-5. Stress test: large files, many concurrent reads, long-running mount
+**Test read-write NFS end-to-end.** Write support implemented, needs real-world verification:
+1. Start NFS server with `--staging-dir` and mount from a client
+2. `cp` a file to the NFS mount → verify it appears in `~/.icne-staging/`
+3. Wait for promotion delay → verify file appears in iCloud Drive folder
+4. Modify an existing iCloud file via NFS → verify copy-up + write + promotion
+5. `rm` a file via NFS → verify deletion from iCloud
+6. `mkdir` via NFS → verify directory appears in both staging and iCloud
+7. Test from a Linux NFS client on the LAN
 
 ### Architecture (Key Files)
 
@@ -40,7 +42,7 @@ src/hydration/                    # Swift (SPM), macOS 14+
 └── Tests/HydrationTests/         # 17 XCTest tests
 
 src/nfs/                          # Rust (Cargo workspace)
-└── nfs-server/src/               # Binary: direct NFSv3 server (icloud_nfs.rs)
+└── nfs-server/src/               # Binary: direct NFSv3 server (icloud_nfs.rs, staging.rs)
 
 src/fuse/                         # Rust (Cargo workspace), retained
 ├── fuse-core/src/                # Library: IPC client/protocol, path_utils (shared with nfs-server)
@@ -89,7 +91,7 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 ### Dev Environment
 - macOS 15 (Darwin 24.6.0), Intel (x86_64)
 - Swift 6.2.3 (Xcode CLI tools only — no full Xcode, so `swift test` fails locally for XCTest)
-- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 52 Rust tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests + 9 nfs-server). Clippy clean on both workspaces.
+- Rust: 1.94.1 (installed via rustup, `~/.cargo/env` sourced in `.zshrc`). 75 Rust tests pass locally (21 fuse-core + 6 passthrough + 16 doc-tests + 22 nfs-server + 10 staging). Clippy clean on both workspaces.
 - Python 3.14
 - macFUSE: 5.2.0 installed (Homebrew cask). Kext backend works (Intel mini). FSKit broken on this Intel Mac (`fskitd` never starts, mount segfaults). Verified FSKit infra works on M2/macOS 26 but mount needs module fix. Kext mount at `/Volumes` requires sudo; `/tmp` works without. libfuse + headers at `/usr/local/lib`, `/usr/local/include/fuse`
 
@@ -99,8 +101,8 @@ All components at `0.2.0`. Released as v0.2.0 on GitHub.
 - `ARCHITECTURE.md` — design patterns (Proxy, Lazy Init, State Machine, Facade, Strategy)
 
 ### Completed Roadmap
-M0 Scaffold → M1 Hydration Daemon → M2 FUSE Core → M3 NFS Wiring → M4 Menu Bar App → M5 Setup Wizard → M6 Distribution → M7 Polish → v0.2 SwiftUI Migration → API Documentation → Direct NFSv3 Server (read-only)
+M0 Scaffold → M1 Hydration Daemon → M2 FUSE Core → M3 NFS Wiring → M4 Menu Bar App → M5 Setup Wizard → M6 Distribution → M7 Polish → v0.2 SwiftUI Migration → API Documentation → Direct NFSv3 Server (read-only) → Read-Write NFS via Staging Layer
 
 ### Future Roadmap
-- **Read-write NFS** — implement write-back through iCloud: `write()`/`create()`/`mkdir()`/`rename()`/`remove()` in NFS server → upload via iCloud APIs. Requires: iCloud upload mechanism in hydration daemon, conflict resolution with iCloud sync, file locking strategy.
+- **End-to-end write testing** — verify staging → promotion → iCloud sync with real iCloud Drive, including large files and concurrent writes
 - **FSKit migration** — revisit when macFUSE ships macOS 26-compatible FSKit module (for local FUSE mount without kext, if needed alongside NFS)
